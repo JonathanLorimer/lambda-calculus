@@ -1,0 +1,4 @@
+haddock-style: single-line
+haddock-style-module: multi-line
+column-limit: 80
+indentation: 2

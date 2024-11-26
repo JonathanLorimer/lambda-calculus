@@ -1,0 +1,8 @@
+cradle:
+  cabal:
+    - path: "./src"
+      component: "lib:lambda-calculus"
+    - path: "./test"
+      component: "test:lambda-calculus-tests"
+    - path: "./app"
+      component: "exe:lambda-calculus"
