@@ -7,13 +7,15 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE DeriveFoldable #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module LambdaCalculus.Expr where
 
 import Control.Monad (void)
-import Control.Monad.Reader (runReader)
-import Control.Monad.Reader.Class (MonadReader (..))
-import Control.Monad.State.Strict (MonadState (..), runState, modify, gets)
+import Control.Monad.Reader (runReader, ReaderT (..))
+import Control.Monad.Reader.Class (MonadReader (..), asks)
+import Control.Monad.State.Strict (MonadState (..), runState, modify, gets, evalStateT)
 import Data.DList (DList)
 import Data.DList qualified as DL
 import Data.DList.Unsafe (DList (..))
@@ -28,6 +30,8 @@ import Data.Text.Lazy (Text)
 import Data.Text.Lazy.Builder qualified as TB
 import Data.Validation
 import Numeric.Natural (Natural)
+import Control.Monad.Except (ExceptT, MonadError (..))
+import Control.Monad.Trans.State.Strict (StateT)
 
 {- Core Types -}
 
@@ -139,6 +143,8 @@ fv = cata \case
 isCombinator :: (Eq a, Ord a) => Expr a -> Bool
 isCombinator = (==) S.empty . fv
 
+{- Alpha Equivalence -}
+
 data RenameState a = RenameState
   { index :: Natural
   , indexMap :: Map a Natural
@@ -147,42 +153,41 @@ data RenameState a = RenameState
 emptyRenameState :: RenameState a
 emptyRenameState = RenameState 0 M.empty
 
-alphaNormalizeWithVarMap ::
-  forall a. (Ord a) => Expr a -> (Expr Natural, Map Natural a)
-alphaNormalizeWithVarMap =
-  fst . flip runState (emptyRenameState @a) . cataA \case
-    VarF a -> state \rs ->
-      case M.lookup a rs.indexMap of
-        Just idx -> ((Var idx, M.singleton idx a), rs)
-        Nothing ->
-          ( (Var rs.index, M.singleton rs.index a)
-          , RenameState
-              { index = rs.index + 1
-              , indexMap = M.insert a rs.index rs.indexMap
-              }
-          )
-    AppF e1 e2 -> do
-      indexMap' <- gets (.indexMap)
-      (e1', varMap1) <- e1
-      modify (\rs -> rs { indexMap = indexMap' })
-      (e2', varMap2) <- e2
-      pure (App e1' e2', varMap1 `M.union` varMap2)
-    AbsF a e1 -> do
-      idx <- gets (.index)
-      modify (\rs ->
-          ( rs
-              { index = idx + 1
-              , indexMap = M.alter (const $ Just idx) a rs.indexMap
-              }
-          ))
-      (e1', varMap) <- e1
-      pure (Abs idx e1', M.insert idx a varMap)
+newtype Ctx n a = Ctx { unCtx :: StateT Natural (ReaderT (Map n Natural) (Either n)) a }
+  deriving newtype (Functor, Applicative, Monad, MonadState Natural, MonadReader (Map n Natural), MonadError n)
 
-alphaNormalize :: (Ord a) => Expr a -> Expr Natural
-alphaNormalize = fst . alphaNormalizeWithVarMap
+alphaNormalizeWithVarMap' ::
+  forall a. (Ord a) => Expr a -> Ctx a (Expr Natural, Map Natural a)
+alphaNormalizeWithVarMap' = cataA \case
+  VarF a -> do 
+    mIdx <- asks $ M.lookup a
+    case mIdx of
+      Just idx -> pure (Var idx, M.singleton idx a)
+      Nothing -> throwError a
+  AppF e1 e2 -> do
+    (e1', varMap1) <- e1
+    (e2', varMap2) <- e2
+    pure (App e1' e2', varMap1 `M.union` varMap2)
+  AbsF a e1 -> do
+    idx <- get
+    modify (+ 1)
+    (e1', varMap) <- local (M.alter (const $ Just idx) a) e1
+    pure (Abs idx e1', M.insert idx a varMap)
 
-alphaVarMap :: (Ord a) => Expr a -> Map Natural a
-alphaVarMap = snd . alphaNormalizeWithVarMap
+-- TODO: clean this up and make it more readable
+alphaNormalizeWithVarMap :: forall a. (Ord a) => Set a -> Expr a -> Either a (Expr Natural, Map Natural a)
+alphaNormalizeWithVarMap freeVariables = 
+  fmap (fmap . M.union . M.fromList $ zip [0..] (S.toList freeVariables))
+  . flip runReaderT (M.fromList $ zip (S.toList freeVariables) [0..])
+  . flip evalStateT (fromIntegral $ S.size freeVariables)
+  . unCtx
+  . alphaNormalizeWithVarMap'
+
+alphaNormalize :: (Ord a) => Set a -> Expr a -> Either a (Expr Natural)
+alphaNormalize freeVariables = fmap fst . alphaNormalizeWithVarMap freeVariables
+
+alphaVarMap :: (Ord a) => Set a -> Expr a -> Either a (Map Natural a)
+alphaVarMap freeVariables = fmap snd . alphaNormalizeWithVarMap freeVariables
 
 note :: e -> Maybe a -> Validation e a
 note e = maybe (Failure e) Success

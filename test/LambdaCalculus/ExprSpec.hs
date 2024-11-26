@@ -1,72 +1,104 @@
+{-# LANGUAGE LambdaCase #-}
 module LambdaCalculus.ExprSpec where
 
 import Data.Validation (Validation (..))
 import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
-import LambdaCalculus.Expr (
-  Expr (..),
-  alphaNormalizeWithVarMap,
-  alphaReconstitute,
-  printExprTree,
- )
+import LambdaCalculus.Expr
+    ( Expr(..),
+      alphaNormalizeWithVarMap,
+      alphaReconstitute,
+      printExprTree,
+      fv )
 import Test.Hspec
-import Test.Hspec.Hedgehog (MonadGen, forAll, hedgehog, (===))
-
-import Control.Monad.IO.Class (liftIO)
+import Test.Hspec.Hedgehog (MonadGen, forAll, hedgehog, (===), PropertyT, annotate, annotateShow, failure)
 import Data.Foldable (Foldable (..))
 import Data.List (intersperse)
 import qualified Data.Map.Strict as M
 import qualified Data.Text.Lazy as TL
 import Test.Hspec.QuickCheck (modifyMaxSuccess)
 import qualified Data.Set as S
+import Test.HUnit (assertFailure)
+
+assertRight :: (Show e) => Either e v -> IO v
+assertRight = \case
+  Left e -> assertFailure $ "Expected Right but got Left " <> show e
+  Right v -> pure v
+
+assertRightProp :: (Show e) => Either e v -> PropertyT IO v
+assertRightProp = \case
+  Left e -> do
+    annotate "unexpected Left:"
+    annotateShow e
+    failure
+  Right v -> pure v
 
 spec :: Spec
 spec =
   describe "alpha renaming" $ do
-      it "canonical renaming via alphaNormalize should round trip, important example 1" $ do
-        let exprTree = 
-              Abs "" 
-                (App 
-                  (Abs "" (Var "")) 
+    describe "canonicalization" $ do
+      it "consistent shadowing in right branch" $ do
+        let exprTree =
+              Abs ""
+                (App
+                  (Abs "" (Var ""))
                   (App (Var "") (Var ""))
                 )
-        let (canonicalTree, varMap) = alphaNormalizeWithVarMap exprTree
+        (canonicalTree, varMap) <- assertRight $ alphaNormalizeWithVarMap S.empty exprTree
         canonicalTree `shouldBe`
-          Abs 0 
-            (App 
-              (Abs 1 (Var 1)) 
+          Abs 0
+            (App
+              (Abs 1 (Var 1))
               (App (Var 0) (Var 0))
             )
         S.fromList (foldMap (:[]) canonicalTree) `shouldBe`
           S.fromList (M.keys varMap)
 
-      it "canonical renaming via alphaNormalize should round trip, important example 2" $ do
-        let exprTree = 
-              Abs "" 
-                (App 
+      it "consistent shadowing in left branch" $ do
+        let exprTree =
+              Abs ""
+                (App
                   (App (Var "") (Var ""))
-                  (Abs "" (Var "")) 
+                  (Abs "" (Var ""))
                 )
-        let (canonicalTree, varMap) = alphaNormalizeWithVarMap exprTree
+        (canonicalTree, varMap) <- assertRight $ alphaNormalizeWithVarMap S.empty exprTree
         canonicalTree `shouldBe`
-          Abs 0 
-            (App 
+          Abs 0
+            (App
               (App (Var 0) (Var 0))
-              (Abs 1 (Var 1)) 
+              (Abs 1 (Var 1))
             )
         S.fromList (foldMap (:[]) canonicalTree) `shouldBe`
           S.fromList (M.keys varMap)
-          
 
-      modifyMaxSuccess (const 100) $
-        xit "canonical renaming via alphaNormalize should round trip" $
+      it "consistent renaming of free variables" $ do
+        let exprTree =
+              Abs "x"
+                (App
+                  (App (Var "y") (Var "x"))
+                  (Abs "z" (Var "y"))
+                )
+        (canonicalTree, varMap) <- assertRight $ alphaNormalizeWithVarMap (fv exprTree) exprTree
+        canonicalTree `shouldBe`
+          Abs 1
+            (App
+              (App (Var 0) (Var 1))
+              (Abs 2 (Var 0))
+            )
+        S.fromList (foldMap (:[]) canonicalTree) `shouldBe`
+          S.fromList (M.keys varMap)
+
+
+      modifyMaxSuccess (const 10000) $
+        it "canonical renaming via alphaNormalize should round trip" $
           hedgehog $ do
             exprTree <- forAll . exprG $ Gen.string (Range.linear 0 50) Gen.alpha
-            let (canonicalTree, varMap) = alphaNormalizeWithVarMap exprTree
-            liftIO $ print exprTree
-            liftIO $ putStrLn . TL.unpack . printExprTree $ exprTree
-            liftIO $ putStrLn . TL.unpack . printExprTree $ canonicalTree
-            liftIO $ print varMap
+            (canonicalTree, varMap) <- assertRightProp $ alphaNormalizeWithVarMap (fv exprTree) exprTree
+            -- liftIO $ print exprTree
+            -- liftIO $ putStrLn . TL.unpack . printExprTree $ exprTree
+            -- liftIO $ putStrLn . TL.unpack . printExprTree $ canonicalTree
+            -- liftIO $ print varMap
+            -- liftIO $ print (fv exprTree)
             case alphaReconstitute varMap canonicalTree of
               Failure e ->
                 fail . fold $
