@@ -174,12 +174,11 @@ alphaNormalizeWithVarMap' = cataA \case
     (e1', varMap) <- local (M.alter (const $ Just idx) a) e1
     pure (Abs idx e1', M.insert idx a varMap)
 
--- TODO: clean this up and make it more readable
 alphaNormalizeWithVarMap :: forall a. (Ord a) => Set a -> Expr a -> Either a (Expr Natural, Map Natural a)
 alphaNormalizeWithVarMap freeVariables = 
-  fmap (fmap . M.union . M.fromList $ zip [0..] (S.toList freeVariables))
-  . flip runReaderT (M.fromList $ zip (S.toList freeVariables) [0..])
-  . flip evalStateT (fromIntegral $ S.size freeVariables)
+  fmap (fmap . M.union . M.fromList $ zip [0..] (S.toList freeVariables)) -- insert free variables into varMap
+  . flip runReaderT (M.fromList $ zip (S.toList freeVariables) [0..])     -- initialize the index map with free variables
+  . flip evalStateT (fromIntegral $ S.size freeVariables)                 -- initialize index counter at the size of the free variable map
   . unCtx
   . alphaNormalizeWithVarMap'
 
