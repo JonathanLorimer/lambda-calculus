@@ -6,12 +6,14 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE DeriveFoldable #-}
 
 module LambdaCalculus.Expr where
 
+import Control.Monad (void)
 import Control.Monad.Reader (runReader)
 import Control.Monad.Reader.Class (MonadReader (..))
-import Control.Monad.State.Strict (MonadState (..), runState)
+import Control.Monad.State.Strict (MonadState (..), runState, modify, gets)
 import Data.DList (DList)
 import Data.DList qualified as DL
 import Data.DList.Unsafe (DList (..))
@@ -24,6 +26,7 @@ import Data.Set (Set)
 import Data.Set qualified as S
 import Data.Text.Lazy (Text)
 import Data.Text.Lazy.Builder qualified as TB
+import Data.Validation
 import Numeric.Natural (Natural)
 
 {- Core Types -}
@@ -42,7 +45,7 @@ data Expr a
   = Var a
   | Abs a (Expr a)
   | App (Expr a) (Expr a)
-  deriving (Eq, Ord, Show, Functor)
+  deriving (Eq, Ord, Show, Functor, Foldable)
 
 {- Recursion Schemes -}
 
@@ -144,49 +147,56 @@ data RenameState a = RenameState
 emptyRenameState :: RenameState a
 emptyRenameState = RenameState 0 M.empty
 
-alphaNormalizeWithVarMap :: forall a. (Ord a) => Expr a -> (Expr Natural, Map Natural a)
+alphaNormalizeWithVarMap ::
+  forall a. (Ord a) => Expr a -> (Expr Natural, Map Natural a)
 alphaNormalizeWithVarMap =
   fst . flip runState (emptyRenameState @a) . cataA \case
     VarF a -> state \rs ->
-      ( (Var rs.index, M.singleton rs.index a)
-      , RenameState
-          { index = rs.index + 1
-          , indexMap = M.insert a rs.index rs.indexMap
-          }
-      )
-    AppF e1 e2 -> do 
+      case M.lookup a rs.indexMap of
+        Just idx -> ((Var idx, M.singleton idx a), rs)
+        Nothing ->
+          ( (Var rs.index, M.singleton rs.index a)
+          , RenameState
+              { index = rs.index + 1
+              , indexMap = M.insert a rs.index rs.indexMap
+              }
+          )
+    AppF e1 e2 -> do
+      indexMap' <- gets (.indexMap)
       (e1', varMap1) <- e1
+      modify (\rs -> rs { indexMap = indexMap' })
       (e2', varMap2) <- e2
       pure (App e1' e2', varMap1 `M.union` varMap2)
     AbsF a e1 -> do
-      -- NOTE: It is very important to get the downstream state computation
-      -- first so that we can find the bound variable indices in the map
-      (e1', varMap) <- e1
-      rs <- get
-      case M.lookup a rs.indexMap of
-        Just idx -> 
-          -- Leave varMap unchanged, since we already inserted at the 
-          -- bound variable site
-          (Abs idx e1', varMap)
-            <$ put
-              (rs {
-                indexMap = M.delete a rs.indexMap
+      idx <- gets (.index)
+      modify (\rs ->
+          ( rs
+              { index = idx + 1
+              , indexMap = M.alter (const $ Just idx) a rs.indexMap
               }
-              )
-        Nothing ->
-          (Abs rs.index e1', M.insert rs.index a varMap)
-            <$ put
-              ( rs
-                  { index = rs.index + 1
-                  , indexMap = M.insert a rs.index rs.indexMap
-                  }
-              )
+          ))
+      (e1', varMap) <- e1
+      pure (Abs idx e1', M.insert idx a varMap)
 
 alphaNormalize :: (Ord a) => Expr a -> Expr Natural
 alphaNormalize = fst . alphaNormalizeWithVarMap
 
 alphaVarMap :: (Ord a) => Expr a -> Map Natural a
 alphaVarMap = snd . alphaNormalizeWithVarMap
+
+note :: e -> Maybe a -> Validation e a
+note e = maybe (Failure e) Success
+
+alphaReconstitute ::
+  forall a.
+  (Ord a) =>
+  Map Natural a ->
+  Expr Natural ->
+  Validation [Natural] (Expr a)
+alphaReconstitute idxMap = cata \case
+  VarF idx -> note [idx] $ Var <$> M.lookup idx idxMap
+  AppF e1 e2 -> liftA2 App e1 e2
+  AbsF idx e -> liftA2 Abs (note [idx] $ M.lookup idx idxMap) e
 
 {- Examples -}
 identityE :: Expr String

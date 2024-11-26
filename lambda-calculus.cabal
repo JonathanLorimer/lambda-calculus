@@ -21,8 +21,9 @@ common common-opts
     , dlist
     , mtl
     , recursion-schemes
-    , transformers
     , text
+    , transformers
+    , validation
 
   default-language: Haskell2010
 
@@ -50,7 +51,7 @@ test-suite lambda-calculus-tests
 
   -- cabal-fmt: expand test -Main
   other-modules:
-    CoreSpec
+    LambdaCalculus.ExprSpec
     Spec
 
   build-depends:
