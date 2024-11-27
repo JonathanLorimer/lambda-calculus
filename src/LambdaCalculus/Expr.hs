@@ -12,7 +12,7 @@
 
 module LambdaCalculus.Expr where
 
-import Control.Monad (void)
+import Control.Monad (void, when)
 import Control.Monad.Reader (runReader, ReaderT (..))
 import Control.Monad.Reader.Class (MonadReader (..), asks)
 import Control.Monad.State.Strict (MonadState (..), runState, modify, gets, evalStateT)
@@ -32,6 +32,8 @@ import Data.Validation
 import Numeric.Natural (Natural)
 import Control.Monad.Except (ExceptT, MonadError (..))
 import Control.Monad.Trans.State.Strict (StateT)
+import Data.Monoid (First(..))
+import Data.Bifunctor (Bifunctor(..))
 
 {- Core Types -}
 
@@ -140,6 +142,18 @@ fv = cata \case
   AppF exprs1 exprs2 -> exprs1 <> exprs2
   AbsF a exprs -> S.delete a exprs
 
+binders :: (Eq a, Ord a) => Expr a -> Set a
+binders = cata \case
+  VarF a -> S.empty
+  AppF exprs1 exprs2 -> exprs1 <> exprs2
+  AbsF a exprs -> S.insert a exprs
+
+vars :: (Eq a, Ord a) => Expr a -> Set a
+vars = cata \case
+  VarF a -> S.singleton a
+  AppF exprs1 exprs2 -> exprs1 <> exprs2
+  AbsF a exprs -> S.insert a exprs
+
 isCombinator :: (Eq a, Ord a) => Expr a -> Bool
 isCombinator = (==) S.empty . fv
 
@@ -201,6 +215,35 @@ alphaReconstitute idxMap = cata \case
   VarF idx -> note [idx] $ Var <$> M.lookup idx idxMap
   AppF e1 e2 -> liftA2 App e1 e2
   AbsF idx e -> liftA2 Abs (note [idx] $ M.lookup idx idxMap) e
+
+data RenameError a = 
+    NormalizationError a 
+  | ReconstitutionError [Natural]
+  | BadRenaming (Expr a) a
+  deriving (Eq, Ord, Show)
+
+alphaRename :: (Ord a) => Expr a -> Set a -> a -> a -> Either (RenameError a) (Expr a)
+alphaRename expr freeVars old new = do
+  (exprN, varMap) <- first NormalizationError $ alphaNormalizeWithVarMap freeVars expr
+  let free = fv exprN
+      toRename = M.filter (== old) varMap
+      freeToRename = M.restrictKeys toRename free
+      newSubMap = new <$ freeToRename
+      newFullMap = newSubMap `M.union` varMap -- Depends on union being left biased
+  first ReconstitutionError . toEither $ alphaReconstitute newFullMap exprN
+
+safeAlphaRename :: (Ord a) => Expr a -> Set a -> a -> a -> Either (RenameError a) (Expr a)
+safeAlphaRename expr freeVars old new = do
+  when (S.member new (vars expr)) $
+    throwError $ BadRenaming expr new 
+
+  (exprN, varMap) <- first NormalizationError $ alphaNormalizeWithVarMap freeVars expr
+  let free = fv exprN
+      toRename = M.filter (== old) varMap
+      freeToRename = M.restrictKeys toRename free
+      newSubMap = new <$ freeToRename
+      newFullMap = newSubMap `M.union` varMap -- Depends on union being left biased
+  first ReconstitutionError . toEither $ alphaReconstitute newFullMap exprN
 
 {- Examples -}
 identityE :: Expr String

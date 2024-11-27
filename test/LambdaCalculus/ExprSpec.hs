@@ -9,9 +9,9 @@ import LambdaCalculus.Expr
       alphaNormalizeWithVarMap,
       alphaReconstitute,
       printExprTree,
-      fv )
+      fv, alphaRename, vars, safeAlphaRename )
 import Test.Hspec
-import Test.Hspec.Hedgehog (MonadGen, forAll, hedgehog, (===), PropertyT, annotate, annotateShow, failure)
+import Test.Hspec.Hedgehog (MonadGen, forAll, hedgehog, (===), PropertyT, annotate, annotateShow, failure, (/==), modifyMaxDiscardRatio)
 import Data.Foldable (Foldable (..))
 import Data.List (intersperse)
 import qualified Data.Map.Strict as M
@@ -19,11 +19,17 @@ import qualified Data.Text.Lazy as TL
 import Test.Hspec.QuickCheck (modifyMaxSuccess)
 import qualified Data.Set as S
 import Test.HUnit (assertFailure)
+import qualified Data.List.NonEmpty as NE
 
 assertRight :: (Show e) => Either e v -> IO v
 assertRight = \case
   Left e -> assertFailure $ "Expected Right but got Left " <> show e
   Right v -> pure v
+
+assertJust :: Maybe a -> IO a
+assertJust = \case
+  Nothing -> assertFailure "Expected Just but got Nothing"
+  Just a -> pure a
 
 assertRightProp :: (Show e) => Either e v -> PropertyT IO v
 assertRightProp = \case
@@ -36,7 +42,31 @@ assertRightProp = \case
 spec :: Spec
 spec =
   describe "alpha renaming" $ do
-    describe "canonicalization" $ do
+    describe "alphaRename" $ do
+      modifyMaxDiscardRatio (const 1000) . modifyMaxSuccess (const 10000) $
+        it "should round trip" $
+          hedgehog $ do
+            (expr, old, new) <- forAll $ do 
+              let strG = Gen.string (Range.linear 0 50) Gen.alpha
+              expr <- exprG strG
+              frees <- Gen.mapMaybe (NE.nonEmpty . S.toList . fv) (pure expr)
+              -- NOTE: we enforce the "safety" invariant for renaming here
+              new <- Gen.filter (not . flip S.member (vars expr)) strG
+              pure (expr, NE.head frees, new)
+            once <- assertRightProp $ 
+              safeAlphaRename expr (fv expr) old new
+            twice <- assertRightProp $ 
+              -- This may be an "unsafe" rename, since it could flip (and
+              -- probably will) flip variables free variables to have the same
+              -- name as bound variables (elsewhere in the term, since we only
+              -- target free variables on the way in). It shouldn't matter though
+              -- since we are just checking that this inverts
+              alphaRename once (fv once) new old
+
+            once /== expr
+            twice === expr
+
+    describe "alphaNormalizeWithVarMap" $ do
       it "consistent shadowing in right branch" $ do
         let exprTree =
               Abs ""
@@ -90,7 +120,7 @@ spec =
 
 
       modifyMaxSuccess (const 10000) $
-        it "canonical renaming via alphaNormalize should round trip" $
+        it "should round trip" $
           hedgehog $ do
             exprTree <- forAll . exprG $ Gen.string (Range.linear 0 50) Gen.alpha
             (canonicalTree, varMap) <- assertRightProp $ alphaNormalizeWithVarMap (fv exprTree) exprTree
