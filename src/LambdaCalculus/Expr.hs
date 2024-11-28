@@ -21,7 +21,7 @@ import Data.DList qualified as DL
 import Data.DList.Unsafe (DList (..))
 import Data.Functor (($>), (<&>))
 import Data.Functor.Foldable
-import Data.List (delete)
+import Data.List (delete, find)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as M
 import Data.Set (Set)
@@ -34,6 +34,7 @@ import Control.Monad.Except (ExceptT, MonadError (..))
 import Control.Monad.Trans.State.Strict (StateT)
 import Data.Monoid (First(..))
 import Data.Bifunctor (Bifunctor(..))
+import Data.Text.Lazy qualified as TL
 
 {- Core Types -}
 
@@ -234,16 +235,35 @@ alphaRename expr freeVars old new = do
 
 safeAlphaRename :: (Ord a) => Expr a -> Set a -> a -> a -> Either (RenameError a) (Expr a)
 safeAlphaRename expr freeVars old new = do
-  when (S.member new (vars expr)) $
+  when (S.member new $ vars expr) $
     throwError $ BadRenaming expr new 
+  alphaRename expr freeVars old new
 
-  (exprN, varMap) <- first NormalizationError $ alphaNormalizeWithVarMap freeVars expr
-  let free = fv exprN
-      toRename = M.filter (== old) varMap
-      freeToRename = M.restrictKeys toRename free
-      newSubMap = new <$ freeToRename
-      newFullMap = newSubMap `M.union` varMap -- Depends on union being left biased
-  first ReconstitutionError . toEither $ alphaReconstitute newFullMap exprN
+class Produce a where
+  next :: Set a -> a
+
+instance Produce Text where 
+  next s = case find (not . flip S.member s) $ TL.pack . show <$> [0..] of
+              Nothing -> error "Produce.next for String failed"
+              Just a -> a
+
+instance Produce Natural where 
+  next s = case find (not . flip S.member s) [0..] of
+              Nothing -> error "Produce.next for Natural failed"
+              Just a -> a
+
+{- Substitution -}
+subst :: (Ord a, Produce a) => Expr a -> (a, Expr a) -> Either (RenameError a) (Expr a)
+subst expr (toReplace, toSub) = flip cataA expr \case
+  VarF a -> pure if a == toReplace 
+    then toSub                               -- x[x := N ] ≡ N
+    else Var a                               -- y[x := N ] ≡ y if x ≡ y
+  AppF expr1 expr2 -> liftA2 App expr1 expr2 -- (P Q)[x := N ] ≡ (P [x := N ])(Q[x := N ])
+  AbsF a expr1 -> do                                   
+    expr1' <- expr1
+    let newA = next (fv toSub `S.union` vars expr1')
+    newExpr <- safeAlphaRename expr1' (fv expr1') a newA
+    pure $ Abs newA newExpr
 
 {- Examples -}
 identityE :: Expr String

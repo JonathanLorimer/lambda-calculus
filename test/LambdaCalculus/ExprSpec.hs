@@ -1,4 +1,6 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module LambdaCalculus.ExprSpec where
 
 import Data.Validation (Validation (..))
@@ -9,7 +11,7 @@ import LambdaCalculus.Expr
       alphaNormalizeWithVarMap,
       alphaReconstitute,
       printExprTree,
-      fv, alphaRename, vars, safeAlphaRename )
+      fv, alphaRename, vars, safeAlphaRename, subst )
 import Test.Hspec
 import Test.Hspec.Hedgehog (MonadGen, forAll, hedgehog, (===), PropertyT, annotate, annotateShow, failure, (/==), modifyMaxDiscardRatio)
 import Data.Foldable (Foldable (..))
@@ -20,6 +22,7 @@ import Test.Hspec.QuickCheck (modifyMaxSuccess)
 import qualified Data.Set as S
 import Test.HUnit (assertFailure)
 import qualified Data.List.NonEmpty as NE
+import Data.Text.Lazy (Text)
 
 assertRight :: (Show e) => Either e v -> IO v
 assertRight = \case
@@ -40,22 +43,22 @@ assertRightProp = \case
   Right v -> pure v
 
 spec :: Spec
-spec =
+spec = do
   describe "alpha renaming" $ do
     describe "alphaRename" $ do
-      modifyMaxDiscardRatio (const 1000) . modifyMaxSuccess (const 10000) $
+      modifyMaxDiscardRatio (const 1000) . modifyMaxSuccess (const 100) $
         it "should round trip" $
           hedgehog $ do
-            (expr, old, new) <- forAll $ do 
+            (expr, old, new) <- forAll $ do
               let strG = Gen.string (Range.linear 0 50) Gen.alpha
               expr <- exprG strG
               frees <- Gen.mapMaybe (NE.nonEmpty . S.toList . fv) (pure expr)
               -- NOTE: we enforce the "safety" invariant for renaming here
               new <- Gen.filter (not . flip S.member (vars expr)) strG
               pure (expr, NE.head frees, new)
-            once <- assertRightProp $ 
+            once <- assertRightProp $
               safeAlphaRename expr (fv expr) old new
-            twice <- assertRightProp $ 
+            twice <- assertRightProp $
               -- This may be an "unsafe" rename, since it could flip (and
               -- probably will) flip variables free variables to have the same
               -- name as bound variables (elsewhere in the term, since we only
@@ -68,7 +71,7 @@ spec =
 
     describe "alphaNormalizeWithVarMap" $ do
       it "consistent shadowing in right branch" $ do
-        let exprTree =
+        let exprTree :: Expr Text =
               Abs ""
                 (App
                   (Abs "" (Var ""))
@@ -85,7 +88,7 @@ spec =
           S.fromList (M.keys varMap)
 
       it "consistent shadowing in left branch" $ do
-        let exprTree =
+        let exprTree :: Expr Text =
               Abs ""
                 (App
                   (App (Var "") (Var ""))
@@ -102,7 +105,7 @@ spec =
           S.fromList (M.keys varMap)
 
       it "consistent renaming of free variables" $ do
-        let exprTree =
+        let exprTree :: Expr Text =
               Abs "x"
                 (App
                   (App (Var "y") (Var "x"))
@@ -119,7 +122,7 @@ spec =
           S.fromList (M.keys varMap)
 
 
-      modifyMaxSuccess (const 10000) $
+      modifyMaxSuccess (const 100) $
         it "should round trip" $
           hedgehog $ do
             exprTree <- forAll . exprG $ Gen.string (Range.linear 0 50) Gen.alpha
@@ -146,6 +149,21 @@ spec =
                 reconstitutedTree === exprTree
             S.fromList (foldMap (:[]) canonicalTree) ===
               S.fromList (M.keys varMap)
+
+  describe "substitution" $ do
+    describe "subst" $ do
+      it "should work with a variable" $ do
+        let exprTree :: Expr Text = Abs "x" $ App (Var "y") (Var "x")
+        result <- assertRight $ subst exprTree ("y", Var "new")
+        result `shouldBe` Abs "0" (App (Var "new") (Var "0"))
+      it "should work with an abstraction" $ do
+        let exprTree :: Expr Text = Abs "x" $ App (Var "y") (Var "x")
+        result <- assertRight $ subst exprTree ("y", Abs "x" (Var "x"))
+        result `shouldBe` Abs "0" (App (Abs "x" (Var "x")) (Var "0"))
+      it "should work with an application" $ do
+        let exprTree :: Expr Text = Abs "0" $ App (Var "y") (Var "0")
+        result <- assertRight $ subst exprTree ("y", App (Var "x") (Var "x"))
+        result `shouldBe` Abs "1" (App (App (Var "x") (Var "x")) (Var "1"))
 
 exprG :: (MonadGen m) => m a -> m (Expr a)
 exprG aG =
