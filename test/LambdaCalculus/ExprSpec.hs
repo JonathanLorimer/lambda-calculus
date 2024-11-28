@@ -155,15 +155,27 @@ spec = do
       it "should work with a variable" $ do
         let exprTree :: Expr Text = Abs "x" $ App (Var "y") (Var "x")
         result <- assertRight $ subst exprTree ("y", Var "new")
-        result `shouldBe` Abs "0" (App (Var "new") (Var "0"))
+        result `shouldBe` Abs "x" (App (Var "new") (Var "x"))
       it "should work with an abstraction" $ do
         let exprTree :: Expr Text = Abs "x" $ App (Var "y") (Var "x")
         result <- assertRight $ subst exprTree ("y", Abs "x" (Var "x"))
-        result `shouldBe` Abs "0" (App (Abs "x" (Var "x")) (Var "0"))
+        result `shouldBe` Abs "x" (App (Abs "x" (Var "x")) (Var "x"))
       it "should work with an application" $ do
-        let exprTree :: Expr Text = Abs "0" $ App (Var "y") (Var "0")
-        result <- assertRight $ subst exprTree ("y", App (Var "x") (Var "x"))
-        result `shouldBe` Abs "1" (App (App (Var "x") (Var "x")) (Var "1"))
+        let exprTree :: Expr Text = Abs "x" $ App (Var "y") (Var "x")
+        result <- assertRight $ subst exprTree ("y", App (Var "z") (Var "z"))
+        result `shouldBe` Abs "x" (App (App (Var "z") (Var "z")) (Var "x"))
+      it "should rename if abstraction head is free in substitution body" $ do
+        let exprTree :: Expr Text = Abs "x" $ App (Var "y") (Var "x")
+        result <- assertRight $ subst exprTree ("y", Var "x")
+        result `shouldBe` Abs "0" (App (Var "x") (Var "0"))
+      it "should not rename if there is no substitution in branch" $ do
+        let exprTree :: Expr Text = App
+              (Abs "x" $ App (Var "z") (Var "x"))
+              (Abs "x" $ App (Var "y") (Var "x"))
+        result <- assertRight $ subst exprTree ("y", Var "x")
+        result `shouldBe` App
+          (Abs "x" $ App (Var "z") (Var "x"))
+          (Abs "0" $ App (Var "x") (Var "0"))
 
 exprG :: (MonadGen m) => m a -> m (Expr a)
 exprG aG =
