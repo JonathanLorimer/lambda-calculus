@@ -15,6 +15,20 @@ build-type:    Simple
 --   location: $gitrepo
 
 common common-opts
+  default-extensions:
+    BlockArguments
+    DeriveFoldable
+    DeriveFunctor
+    DerivingStrategies
+    GeneralizedNewtypeDeriving
+    ImportQualifiedPost
+    LambdaCase
+    OverloadedRecordDot
+    OverloadedStrings
+    ScopedTypeVariables
+    TypeApplications
+    TypeFamilies
+
   build-depends:
     , base
     , containers
@@ -25,13 +39,21 @@ common common-opts
     , transformers
     , validation
 
-  default-language: Haskell2010
+  default-language:   Haskell2010
 
 library
   import:          common-opts
 
   -- cabal-fmt: expand src
-  exposed-modules: LambdaCalculus.Expr
+  exposed-modules:
+    LambdaCalculus.Lib.Validation
+    LambdaCalculus.Untyped.Alpha
+    LambdaCalculus.Untyped.Beta
+    LambdaCalculus.Untyped.Expr
+    LambdaCalculus.Untyped.Printers
+    LambdaCalculus.Untyped.Subterms
+    LambdaCalculus.Untyped.Vars
+
   hs-source-dirs:  src
 
 executable lambda-calculus
@@ -51,15 +73,17 @@ test-suite lambda-calculus-tests
 
   -- cabal-fmt: expand test -Main
   other-modules:
-    LambdaCalculus.ExprSpec
+    LambdaCalculus.UntypedSpec
     Spec
+    Test.Utils
 
   build-depends:
     , hedgehog
-    , HUnit
     , hspec
+    , hspec-api
     , hspec-core
     , hspec-discover
     , hspec-expectations
     , hspec-hedgehog
+    , HUnit
     , lambda-calculus
