@@ -4,6 +4,7 @@ import Data.Foldable (Foldable (..))
 import Data.List (intersperse)
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as M
+import Data.Monoid (Endo (..))
 import Data.Set qualified as S
 import Data.Text.Lazy (Text)
 import Data.Text.Lazy qualified as TL
@@ -11,6 +12,16 @@ import Data.Validation (Validation (..))
 import Hedgehog (MonadGen, forAll, (===))
 import Hedgehog.Gen qualified as Gen
 import Hedgehog.Range qualified as Range
+import LambdaCalculus.Untyped.Alpha (
+  alphaNormalizeWithVarMap,
+  alphaReconstitute,
+  alphaRename,
+  safeAlphaRename,
+ )
+import LambdaCalculus.Untyped.Beta (isNF, subst)
+import LambdaCalculus.Untyped.Expr
+import LambdaCalculus.Untyped.Printers (printExprTree)
+import LambdaCalculus.Untyped.Vars (fv, vars)
 import Test.Hspec
 import Test.Hspec.Hedgehog (
   hedgehog,
@@ -19,13 +30,6 @@ import Test.Hspec.Hedgehog (
   (/==),
  )
 import Test.Utils
-import LambdaCalculus.Untyped.Expr
-import LambdaCalculus.Untyped.Vars (fv, vars)
-import LambdaCalculus.Untyped.Alpha (safeAlphaRename, alphaRename, alphaNormalizeWithVarMap, alphaReconstitute)
-import LambdaCalculus.Untyped.Printers (printExprTree)
-import LambdaCalculus.Untyped.Beta (subst)
-import LambdaCalculus.Untyped.Beta (isNF)
-import Data.Monoid (Endo(..))
 
 spec :: Spec
 spec = do
@@ -160,7 +164,7 @@ spec = do
 
       it "should work with an application" $ do
         let exprTree :: Expr Text = Abs "x" $ App (Var "y") (Var "x")
-        result <- assertRight $ subst "y" exprTree $ App (Var "z") (Var "z") 
+        result <- assertRight $ subst "y" exprTree $ App (Var "z") (Var "z")
         result `shouldBe` Abs "x" (App (App (Var "z") (Var "z")) (Var "x"))
 
       it "should rename if abstraction head is free in substitution body" $ do
@@ -172,7 +176,7 @@ spec = do
               App
                 (Abs "x" $ App (Var "z") (Var "x"))
                 (Abs "x" $ App (Var "y") (Var "x"))
-        result <- assertRight $ subst "y" exprTree $ Var "x"  
+        result <- assertRight $ subst "y" exprTree $ Var "x"
         result
           `shouldBe` App
             (Abs "x" $ App (Var "z") (Var "x"))
@@ -187,23 +191,24 @@ spec = do
         isNF exprTree `shouldBe` True
 
       it "should return true for term with no lambdas" $ do
-        let exprTree :: Expr Text = 
-                appEndo 
-                  (foldMap 
-                    (Endo . App . Var . TL.singleton) 
-                    ['a' .. 'y']) 
-                  (Var "z")
+        let exprTree :: Expr Text =
+              appEndo
+                ( foldMap
+                    (Endo . App . Var . TL.singleton)
+                    ['a' .. 'y']
+                )
+                (Var "z")
         isNF exprTree `shouldBe` True
 
       it "should return true for term with a stuck lambda" $ do
-        let mkExprTree :: Expr Text -> Expr Text = 
-                appEndo 
-                  (foldMap 
-                    (Endo . App . Var . TL.singleton) 
-                    ['a' .. 'y']) 
+        let mkExprTree :: Expr Text -> Expr Text =
+              appEndo
+                ( foldMap
+                    (Endo . App . Var . TL.singleton)
+                    ['a' .. 'y']
+                )
             exprTree = mkExprTree $ Abs "z" (mkExprTree (Var "z"))
         isNF exprTree `shouldBe` True
-
 
 exprG :: (MonadGen m) => m a -> m (Expr a)
 exprG aG =

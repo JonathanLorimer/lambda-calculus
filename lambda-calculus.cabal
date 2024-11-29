@@ -47,6 +47,8 @@ library
   -- cabal-fmt: expand src
   exposed-modules:
     LambdaCalculus.Lib.Validation
+    LambdaCalculus.Typed.BiDiExpr
+    LambdaCalculus.Typed.Expr
     LambdaCalculus.Untyped.Alpha
     LambdaCalculus.Untyped.Beta
     LambdaCalculus.Untyped.Expr

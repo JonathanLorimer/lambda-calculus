@@ -1,5 +1,6 @@
 module LambdaCalculus.Untyped.Alpha where
 
+import Control.Monad (when)
 import Control.Monad.Except (MonadError (..))
 import Control.Monad.Reader
 import Control.Monad.State.Strict
@@ -14,7 +15,6 @@ import LambdaCalculus.Lib.Validation (note)
 import LambdaCalculus.Untyped.Expr
 import LambdaCalculus.Untyped.Vars (fv, vars)
 import Numeric.Natural
-import Control.Monad (when)
 
 newtype Ctx n a = Ctx {unCtx :: StateT Natural (ReaderT (Map n Natural) (Either n)) a}
   deriving newtype
