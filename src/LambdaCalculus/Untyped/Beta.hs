@@ -5,25 +5,41 @@ import Data.Set qualified as S
 import LambdaCalculus.Untyped.Alpha (RenameError, safeAlphaRename)
 import LambdaCalculus.Untyped.Expr
 import LambdaCalculus.Untyped.Vars (Produce (..), fv, isFreeIn, vars)
+import Data.Monoid (All(..))
 
-subst ::
-  (Ord a, Produce a) => Expr a -> (a, Expr a) -> Either (RenameError a) (Expr a)
-subst expr (toReplace, toSub) = do
-  renamePass <- flip cataA expr \case
+-- x :: a
+-- M N :: Expr a
+-- Redex      = App (Abs x M) N  ~ (λx . M) N
+-- Contractum = subst M x N      ~ M [x := N ]
+subst 
+  :: (Ord a, Produce a) 
+  => a -- x 
+  -> Expr a -- M
+  -> Expr a -- N
+  -> Either (RenameError a) (Expr a)
+subst var m n = do
+  renamePass <- flip cataA m \case
     VarF a -> pure $ Var a
-    AppF expr1 expr2 -> liftA2 App expr1 expr2 -- (P Q)[x := N ] ≡ (P [x := N ])(Q[x := N ])
-    AbsF a expr1 -> do
-      expr1' <- expr1
-      if not (a `isFreeIn` toSub) || not (toReplace `isFreeIn` expr1')
-        then pure $ Abs a expr1'
+    AppF expr1 expr2 -> liftA2 App expr1 expr2
+    AbsF a eitherExpr -> do
+      expr <- eitherExpr
+      if not (a `isFreeIn` n) || not (var `isFreeIn` expr)
+        then pure $ Abs a expr
         else do
-          let newA = next (fv toSub `S.union` vars expr1')
-          newExpr <- safeAlphaRename expr1' (fv expr1') a newA
-          pure $ Abs newA newExpr
+          let a' = next (fv n `S.union` vars expr)
+          newExpr <- safeAlphaRename expr (fv expr) a a'
+          pure $ Abs a' newExpr
   pure $ flip cata renamePass \case
     VarF a ->
-      if a == toReplace
-        then toSub -- x[x := N ] ≡ N
-        else Var a -- y[x := N ] ≡ y if x ≡ y
-    AppF expr1 expr2 -> App expr1 expr2 -- (P Q)[x := N ] ≡ (P [x := N ])(Q[x := N ])
+      if a == var
+        then n -- x[x := N ] ≡ N
+        else Var a -- y[x := N ] ≡ y if x !≡ y
+    AppF expr1 expr2 -> App expr1 expr2
     AbsF a expr1 -> Abs a expr1
+
+isNF :: Expr a -> Bool
+isNF = getAll . para \case
+  VarF _ -> All True
+  AppF (Abs _ _, _) (_, _) -> All False 
+  AppF (_, a1) (_, a2) -> a1 <> a2 
+  AbsF _ (_, a1)  -> a1 
