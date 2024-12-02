@@ -3,6 +3,9 @@
 module LambdaCalculus.Typed.Expr where
 
 import Data.Functor.Foldable
+import qualified Data.List as L
+import Control.Monad.Reader (runReader, local, asks)
+import Data.Foldable (find)
 
 -- Terms
 
@@ -59,11 +62,17 @@ instance Corecursive (Ty a) where
   embed (TyVarF a) = TyVar a
   embed (ArrowF t1 t2) = Arrow t1 t2
 
+printType :: (Show a) => Ty a -> String
+printType = cata \case
+  TyVarF a -> show a
+  ArrowF t1 t2 -> "(" <> t1 <> " -> " <> t2 <> ")"
+
+
 -- Pre-typed λ-terms
 data PreTypedF a b f
   = PTVarF a 
   | PTAppF f f
-  | PTAbsF (a, b) f
+  | PTAbsF (a, Ty b) f
 
 instance Functor (PreTypedF a b) where
   fmap _ (PTVarF a) = PTVarF a
@@ -73,7 +82,7 @@ instance Functor (PreTypedF a b) where
 data PreTyped a b 
   = PTVar a
   | PTApp (PreTyped a b) (PreTyped a b)
-  | PTAbs (a, b) (PreTyped a b)
+  | PTAbs (a, Ty b) (PreTyped a b)
   deriving (Eq, Ord, Show, Functor, Foldable)
 
 type instance Base (PreTyped a b) = PreTypedF a b
@@ -89,14 +98,47 @@ instance Corecursive (PreTyped a b) where
   embed (PTAbsF ab e) = PTAbs ab e
 
 data Statement a b = Statement (PreTyped a b) (Ty b)
+  deriving (Eq, Ord, Show)
 
-declaration :: a -> Ty b -> Statement a b
-declaration tmVar = Statement (PTVar tmVar)
+data Declaration a b = Declaration 
+  { subject :: a 
+  , ty :: Ty b
+  }
+  deriving (Eq, Ord, Show)
 
-newtype Context a b = Context { ctx :: [Statement a b] }
+newtype Context a b = Context { ctx :: [Declaration a b] }
+  deriving (Eq, Ord, Show)
+
+emptyCtx :: Context a b
+emptyCtx = Context []
+
+ext :: Declaration a b -> Context a b -> Context a b
+ext decl context = Context $ decl : context.ctx
 
 data Judgement a b = 
   Judgement 
     { context :: Context a b
     , statement :: Statement a b
     }
+
+wellTyped :: (Eq a, Eq b, Show a, Show b) => PreTyped a b -> Ty b
+wellTyped = flip runReader emptyCtx . cataA \case
+  PTVarF tmVar -> asks \context ->
+    case find (\d -> d.subject == tmVar) context.ctx of
+      Nothing -> error $ "Couldn't find " <> show tmVar <> " in context: " <> show context.ctx
+      Just decl -> decl.ty
+  PTAppF appTy1' appTy2' -> do
+    appTy1 <- appTy1'
+    appTy2 <- appTy2'
+    case appTy1 of
+      TyVar a -> error $ "Expected function type but got type var " <> show a
+      Arrow aty bty | aty == appTy2 -> pure bty
+      Arrow aty _ -> error $ "Input type to arrow " <> show aty <> " does not match type of the expression it was applied to " <> show appTy2
+  PTAbsF (tmVar, tp) bodyTy' -> do
+    bodyTy <- local (ext $ Declaration tmVar tp) bodyTy'
+    pure $ Arrow tp bodyTy
+
+example :: PreTyped Char Char 
+example = PTAbs ('y', Arrow (TyVar 'a') (TyVar 'b'))
+  $ PTAbs ('z', TyVar 'b')
+    $ PTApp (PTVar 'y') (PTVar 'z')

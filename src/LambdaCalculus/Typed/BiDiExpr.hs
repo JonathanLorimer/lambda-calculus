@@ -2,7 +2,7 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE NoFieldSelectors #-}
 
-module LambdaCalculus.Typed.BidiExpr where
+module LambdaCalculus.Typed.BiDiExpr where
 
 import Control.Monad.Except
 import Control.Monad.Reader
