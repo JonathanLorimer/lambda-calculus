@@ -70,19 +70,19 @@ printType = cata \case
 
 -- Pre-typed λ-terms
 data PreTypedF a b f
-  = PTVarF a 
+  = PTVarF a
   | PTAppF f f
-  | PTAbsF (a, Ty b) f
+  | PTAbsF a (Ty b) f
 
 instance Functor (PreTypedF a b) where
   fmap _ (PTVarF a) = PTVarF a
   fmap f (PTAppF e1 e2) = PTAppF (f e1) (f e2)
-  fmap f (PTAbsF a e) = PTAbsF a (f e)
+  fmap f (PTAbsF a b e) = PTAbsF a b (f e)
 
-data PreTyped a b 
+data PreTyped a b
   = PTVar a
   | PTApp (PreTyped a b) (PreTyped a b)
-  | PTAbs (a, Ty b) (PreTyped a b)
+  | PTAbs a (Ty b) (PreTyped a b)
   deriving (Eq, Ord, Show, Functor, Foldable)
 
 type instance Base (PreTyped a b) = PreTypedF a b
@@ -90,18 +90,18 @@ type instance Base (PreTyped a b) = PreTypedF a b
 instance Recursive (PreTyped a b) where
   project (PTVar a) = PTVarF a
   project (PTApp e1 e2) = PTAppF e1 e2
-  project (PTAbs ab e) = PTAbsF ab e
+  project (PTAbs a b e) = PTAbsF a b e
 
 instance Corecursive (PreTyped a b) where
   embed (PTVarF a) = PTVar a
   embed (PTAppF e1 e2) = PTApp e1 e2
-  embed (PTAbsF ab e) = PTAbs ab e
+  embed (PTAbsF a b e) = PTAbs a b e
 
 data Statement a b = Statement (PreTyped a b) (Ty b)
   deriving (Eq, Ord, Show)
 
-data Declaration a b = Declaration 
-  { subject :: a 
+data Declaration a b = Declaration
+  { subject :: a
   , ty :: Ty b
   }
   deriving (Eq, Ord, Show)
@@ -115,14 +115,14 @@ emptyCtx = Context []
 ext :: Declaration a b -> Context a b -> Context a b
 ext decl context = Context $ decl : context.ctx
 
-data Judgement a b = 
-  Judgement 
+data Judgement a b =
+  Judgement
     { context :: Context a b
     , statement :: Statement a b
     }
 
-wellTyped :: (Eq a, Eq b, Show a, Show b) => PreTyped a b -> Ty b
-wellTyped = flip runReader emptyCtx . cataA \case
+wellTyped :: (Eq a, Eq b, Show a, Show b) => Context a b -> PreTyped a b -> Ty b
+wellTyped initalCtx = flip runReader initalCtx . cataA \case
   PTVarF tmVar -> asks \context ->
     case find (\d -> d.subject == tmVar) context.ctx of
       Nothing -> error $ "Couldn't find " <> show tmVar <> " in context: " <> show context.ctx
@@ -134,11 +134,33 @@ wellTyped = flip runReader emptyCtx . cataA \case
       TyVar a -> error $ "Expected function type but got type var " <> show a
       Arrow aty bty | aty == appTy2 -> pure bty
       Arrow aty _ -> error $ "Input type to arrow " <> show aty <> " does not match type of the expression it was applied to " <> show appTy2
-  PTAbsF (tmVar, tp) bodyTy' -> do
+  PTAbsF tmVar tp bodyTy' -> do
     bodyTy <- local (ext $ Declaration tmVar tp) bodyTy'
     pure $ Arrow tp bodyTy
 
-example :: PreTyped Char Char 
-example = PTAbs ('y', Arrow (TyVar 'a') (TyVar 'b'))
-  $ PTAbs ('z', TyVar 'b')
+closedWellTyped :: (Eq a, Eq b, Show a, Show b) => PreTyped a b -> Ty b
+closedWellTyped = wellTyped emptyCtx
+
+example1 :: PreTyped Char Char
+example1 = PTAbs 'y' (Arrow (TyVar 'a') (TyVar 'b'))
+  $ PTAbs 'z' (TyVar 'a')
     $ PTApp (PTVar 'y') (PTVar 'z')
+
+wellTypedExample :: String
+wellTypedExample = printType . closedWellTyped $ example1
+
+typeCheck :: (Eq a, Eq b, Show a, Show b) => Context a b -> PreTyped a b -> Ty b -> Bool
+typeCheck initialCtx term expectedTy = (==) expectedTy $ wellTyped initialCtx term
+
+-- x : α → α, y : (α → α) → β ⊢ (λz : β . λu : γ . z)(y x) : γ → β .
+typeCheckExample :: Bool
+typeCheckExample = let 
+    ctx = Context 
+      [ Declaration 'x' (Arrow (TyVar 'a') (TyVar 'a'))
+      , Declaration 'y' (Arrow (Arrow (TyVar 'a') (TyVar 'a')) (TyVar 'b'))
+      ]
+    term = PTApp 
+      (PTAbs 'z' (TyVar 'b') $ PTAbs 'u' (TyVar 'y') $ PTVar 'z')
+      (PTApp (PTVar 'y') (PTVar 'x'))
+    ty = Arrow (TyVar 'y') (TyVar 'b')
+  in typeCheck ctx term ty
