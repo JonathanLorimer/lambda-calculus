@@ -13,15 +13,15 @@ class Vars (expr :: Type -> Type) where
 
   -- | an abstract representation of an AST traversal running the
   -- provided function over each variable that we come across
-  varElim :: (Var name -> expr (Var name)) -> expr (Var name) -> expr (Var name)
+  sub :: (Var name -> expr (Var name)) -> expr (Var name) -> expr (Var name)
 
 class Binder (expr :: Type -> Type -> Type) (binder :: Type) | binder -> expr where
   -- an abstract representation of a binder constructor (usually lambda abstraction)
   binder :: binder -> expr binder a -> expr binder a
 
-  -- | an abstract representation of an AST traversal running the
-  -- provided function over each binder that we come across
-  binderElim
+  -- A way to operate on a top level binder for the given expression, 
+  -- if the expression is not a binder this function should do nothing.
+  unbind
     :: (binder -> expr binder a -> expr binder a)
     -> expr binder a
     -> expr binder a
@@ -43,7 +43,7 @@ open
   -> expr (Var name)
   -> expr (Var name)
 open x =
-  varElim $
+  sub $
     var . \case
       DeBruijn 0 -> Name x 0
       DeBruijn i -> DeBruijn (i - 1)
@@ -56,7 +56,7 @@ open'
    . (Binder expr name, Vars (expr name), Eq name)
   => expr name (Var name)
   -> expr name (Var name)
-open' = binderElim open
+open' = unbind open
 
 -- | Closes an expression with a lambda abstraction a.k.a moves out of a binder.
 --
@@ -71,7 +71,7 @@ close
   -> expr (Var name)
   -> expr (Var name)
 close x =
-  varElim $
+  sub $
     var . \case
       Name y i
         | y == x && i == 0 -> DeBruijn 0
@@ -96,7 +96,7 @@ weaken
   -> expr name (Var name)
 weaken name =
   binder name
-    . varElim
+    . sub
       ( var . \case
           DeBruijn i -> DeBruijn (i + 1)
           x -> x
@@ -110,9 +110,9 @@ bind
   -> expr name (Var name)
   -> expr name (Var name)
 bind u =
-  binderElim (\_ x -> x) . varElim \case
+  unbind (\_ x -> x) . sub \case
     DeBruijn 0 -> u
-    DeBruijn i -> var $ DeBruijn (i + 1)
+    DeBruijn i -> var $ DeBruijn (i - 1)
     y -> var y
 
 rename
@@ -140,7 +140,7 @@ substitute
   -> name
   -> expr name (Var name)
   -> expr name (Var name)
-substitute u x = bind u . close x
+substitute u x = bind u . close' x
 
 parSubstitute
   :: forall name expr
@@ -149,7 +149,7 @@ parSubstitute
   -> (name, name)
   -> expr name (Var name)
   -> expr name (Var name)
-parSubstitute (u, v) (y, x) = bind u . bind v . close y . close x
+parSubstitute (u, v) (y, x) = bind u . bind v . close' y . close' x
 
 shift
   :: forall name expr
@@ -157,4 +157,4 @@ shift
   => name
   -> expr name (Var name)
   -> expr name (Var name)
-shift x = open x . weaken x
+shift x = open' . weaken x

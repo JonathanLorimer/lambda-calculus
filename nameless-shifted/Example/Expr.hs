@@ -15,6 +15,8 @@ import Shifted.Primitive (
   Var (..),
   Vars (..),
  )
+import Data.Set (Set)
+import qualified Data.Set as S
 
 data ExprF b a expr
   = VarF a
@@ -46,17 +48,16 @@ instance Corecursive (Expr b a) where
 
 instance Vars (Expr b) where
   var = Var
-  varElim f = cata \case
+  sub f = cata \case
     VarF a -> f a
     AbsF b expr -> Abs b expr
     AppF expr1 expr2 -> App expr1 expr2
 
 instance Binder Expr Text where
   binder = Abs
-  binderElim f = cata \case
-    VarF a -> Var a
-    AbsF b expr -> f b expr
-    AppF expr1 expr2 -> App expr1 expr2
+  unbind f = \case
+    Abs b expr -> f b expr
+    x -> x
 
 instance LocallyNameless Expr where
   toNameless =
@@ -87,6 +88,14 @@ instance LocallyNameless Expr where
                 , " but it wasn't present in the environment."
                 ]
       AbsF name expr ->
-        Abs name
-          <$> local (MS.insert 0 name . MS.mapKeysMonotonic (+ 1)) expr
+        fmap (Abs name) . flip local expr $ \m -> 
+          case MS.lookupMax m of
+            Nothing -> MS.insert 0 name m
+            Just (w, _) -> MS.insert (w + 1) name m
       AppF expr1 expr2 -> liftA2 App expr1 expr2
+
+fv :: (Eq a, Ord a) => Expr a a -> Set a
+fv = cata \case
+  VarF a -> S.singleton a
+  AppF exprs1 exprs2 -> exprs1 <> exprs2
+  AbsF a exprs -> S.delete a exprs
