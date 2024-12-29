@@ -26,8 +26,8 @@ newtype Ctx n a = Ctx {unCtx :: StateT Natural (ReaderT (Map n Natural) (Either 
     , MonadError n
     )
 
-alphaNormalizeWithVarMap' ::
-  forall a. (Ord a) => Expr a -> Ctx a (Expr Natural, Map Natural a)
+alphaNormalizeWithVarMap'
+  :: forall a. (Ord a) => Expr a -> Ctx a (Expr Natural, Map Natural a)
 alphaNormalizeWithVarMap' = cataA \case
   VarF a -> do
     mIdx <- asks $ M.lookup a
@@ -44,8 +44,8 @@ alphaNormalizeWithVarMap' = cataA \case
     (e1', varMap) <- local (M.alter (const $ Just idx) a) e1
     pure (Abs idx e1', M.insert idx a varMap)
 
-alphaNormalizeWithVarMap ::
-  forall a. (Ord a) => Set a -> Expr a -> Either a (Expr Natural, Map Natural a)
+alphaNormalizeWithVarMap
+  :: forall a. (Ord a) => Set a -> Expr a -> Either a (Expr Natural, Map Natural a)
 alphaNormalizeWithVarMap freeVariables =
   fmap (fmap . M.union . M.fromList $ zip [0 ..] (S.toList freeVariables)) -- insert free variables into varMap
     . flip runReaderT (M.fromList $ zip (S.toList freeVariables) [0 ..]) -- initialize the index map with free variables
@@ -59,12 +59,12 @@ alphaNormalize freeVariables = fmap fst . alphaNormalizeWithVarMap freeVariables
 alphaVarMap :: (Ord a) => Set a -> Expr a -> Either a (Map Natural a)
 alphaVarMap freeVariables = fmap snd . alphaNormalizeWithVarMap freeVariables
 
-alphaReconstitute ::
-  forall a.
-  (Ord a) =>
-  Map Natural a ->
-  Expr Natural ->
-  Validation [Natural] (Expr a)
+alphaReconstitute
+  :: forall a
+   . (Ord a)
+  => Map Natural a
+  -> Expr Natural
+  -> Validation [Natural] (Expr a)
 alphaReconstitute idxMap = cata \case
   VarF idx -> note [idx] $ Var <$> M.lookup idx idxMap
   AppF e1 e2 -> liftA2 App e1 e2
@@ -76,8 +76,8 @@ data RenameError a
   | BadRenaming (Expr a) a
   deriving (Eq, Ord, Show)
 
-alphaRename ::
-  (Ord a) => Expr a -> Set a -> a -> a -> Either (RenameError a) (Expr a)
+alphaRename
+  :: (Ord a) => Expr a -> Set a -> a -> a -> Either (RenameError a) (Expr a)
 alphaRename expr freeVars old new = do
   (exprN, varMap) <-
     first NormalizationError $ alphaNormalizeWithVarMap freeVars expr
@@ -88,8 +88,8 @@ alphaRename expr freeVars old new = do
       newFullMap = newSubMap `M.union` varMap -- Depends on union being left biased
   first ReconstitutionError . toEither $ alphaReconstitute newFullMap exprN
 
-safeAlphaRename ::
-  (Ord a) => Expr a -> Set a -> a -> a -> Either (RenameError a) (Expr a)
+safeAlphaRename
+  :: (Ord a) => Expr a -> Set a -> a -> a -> Either (RenameError a) (Expr a)
 safeAlphaRename expr freeVars old new = do
   when (S.member new $ vars expr) $
     throwError $

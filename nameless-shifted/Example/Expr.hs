@@ -9,7 +9,12 @@ import Data.Foldable
 import Data.Functor.Foldable hiding (fold)
 import Data.Map.Strict qualified as MS
 import Data.Text (Text)
-import Shifted.Primitive (Binder (..), LocallyNameless (..), Var (..), Vars (..))
+import Shifted.Primitive (
+  Binder (..),
+  LocallyNameless (..),
+  Var (..),
+  Vars (..),
+ )
 
 data ExprF b a expr
   = VarF a

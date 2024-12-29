@@ -159,8 +159,8 @@ example1 =
 wellTypedExample :: String
 wellTypedExample = printType . closedWellTyped $ example1
 
-typeCheck ::
-  (Eq a, Eq b, Show a, Show b) => Context a b -> PreTyped a b -> Ty b -> Bool
+typeCheck
+  :: (Eq a, Eq b, Show a, Show b) => Context a b -> PreTyped a b -> Ty b -> Bool
 typeCheck initialCtx term expectedTy = (==) expectedTy $ wellTyped initialCtx term
 
 -- x : α → α, y : (α → α) → β ⊢ (λz : β . λu : γ . z)(y x) : γ → β .
