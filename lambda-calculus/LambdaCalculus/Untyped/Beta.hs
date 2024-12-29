@@ -11,12 +11,12 @@ import LambdaCalculus.Untyped.Vars (Produce (..), fv, isFreeIn, vars)
 -- M N :: Expr a
 -- Redex      = App (Abs x M) N  ~ (λx . M) N
 -- Contractum = subst M x N      ~ M [x := N ]
-subst ::
-  (Ord a, Produce a) =>
-  a -> -- x
-  Expr a -> -- M
-  Expr a -> -- N
-  Either (RenameError a) (Expr a)
+subst
+  :: (Ord a, Produce a)
+  => a -- x
+  -> Expr a -- M
+  -> Expr a -- N
+  -> Either (RenameError a) (Expr a)
 subst var m n = do
   renamePass <- flip cataA m \case
     VarF a -> pure $ Var a

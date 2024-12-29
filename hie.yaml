@@ -1,8 +1,10 @@
 cradle:
   cabal:
-    - path: "./src"
+    - path: "./lambda-calculus"
       component: "lib:lambda-calculus"
     - path: "./test"
       component: "test:lambda-calculus-tests"
-    - path: "./app"
-      component: "exe:lambda-calculus"
+    - path: "./nameless-shifted"
+      component: "lib:nameless-shifted"
+    - path: "./nameless-shifted-test"
+      component: "test:nameless-shifted-tests"
