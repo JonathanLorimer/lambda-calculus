@@ -12,11 +12,10 @@ import Data.Text (Text)
 import Shifted.Primitive (
   Binder (..),
   LocallyNameless (..),
-  Var (..),
-  Vars (..),
  )
 import Data.Set (Set)
 import qualified Data.Set as S
+import Shifted.Var
 
 data ExprF b a expr
   = VarF a
@@ -62,7 +61,7 @@ instance Binder Expr Text where
 instance LocallyNameless Expr where
   toNameless =
     flip runReader (MS.empty, 0) . cataA \case
-      VarF a -> asks $ Var . maybe (Name a 0) DeBruijn . MS.lookup a . fst
+      VarF a -> asks $ Var . maybe (Free a 0) DeBruijn . MS.lookup a . fst
       AbsF a expr -> do
         m <- ask
         expr' <- flip local expr $ \(m, idx) ->
@@ -76,7 +75,7 @@ instance LocallyNameless Expr where
     flip runReader MS.empty . cataA \case
       VarF a -> case a of
         -- This represents a free variable, so we just use its name
-        Name a _ -> pure $ Var a
+        Free a _ -> pure $ Var a
         -- This is a de-bruijn level so we need to look it up
         DeBruijn w -> asks \m -> case w `MS.lookup` m of
           Just a -> Var a

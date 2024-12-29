@@ -3,17 +3,7 @@
 module Shifted.Primitive where
 
 import Data.Kind
-
-data Var a = Name a Word | DeBruijn Word
-  deriving (Eq, Ord, Show)
-
-class Vars (expr :: Type -> Type) where
-  -- | an abstract representation of the variable constructor
-  var :: Var name -> expr (Var name)
-
-  -- | an abstract representation of an AST traversal running the
-  -- provided function over each variable that we come across
-  sub :: (Var name -> expr (Var name)) -> expr (Var name) -> expr (Var name)
+import Shifted.Var
 
 class Binder (expr :: Type -> Type -> Type) (binder :: Type) | binder -> expr where
   -- an abstract representation of a binder constructor (usually lambda abstraction)
@@ -45,11 +35,11 @@ open
 open x =
   sub $
     var . \case
-      DeBruijn 0 -> Name x 0
+      DeBruijn 0 -> Free x 0
       DeBruijn i -> DeBruijn (i - 1)
-      Name y i
-        | y == x -> Name x (i + 1)
-        | otherwise -> Name y i
+      Free y i
+        | y == x -> Free x (i + 1)
+        | otherwise -> Free y i
 
 open'
   :: forall name expr
@@ -73,10 +63,10 @@ close
 close x =
   sub $
     var . \case
-      Name y i
+      Free y i
         | y == x && i == 0 -> DeBruijn 0
-        | y == x && i > 0 -> Name y (i - 1)
-        | otherwise -> Name y i
+        | y == x && i > 0 -> Free y (i - 1)
+        | otherwise -> Free y i
       DeBruijn n -> DeBruijn (n + 1)
 
 close'
