@@ -1,4 +1,5 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE DataKinds #-}
 
 module Example.Expr where
 
@@ -9,13 +10,11 @@ import Data.Foldable
 import Data.Functor.Foldable hiding (fold)
 import Data.Map.Strict qualified as MS
 import Data.Text (Text)
-import Shifted.Primitive (
-  Binder (..),
-  LocallyNameless (..),
- )
 import Data.Set (Set)
 import qualified Data.Set as S
 import Shifted.Var
+import Shifted.Nameless
+import Shifted.Binder
 
 data ExprF b a expr
   = VarF a
@@ -58,7 +57,7 @@ instance Binder Expr Text where
     Abs b expr -> f b expr
     x -> x
 
-instance LocallyNameless Expr where
+instance LocallyNameless Level Expr where
   toNameless =
     flip runReader (MS.empty, 0) . cataA \case
       VarF a -> asks $ Var . maybe (Free a 0) DeBruijn . MS.lookup a . fst

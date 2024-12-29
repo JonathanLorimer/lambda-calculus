@@ -2,6 +2,11 @@ module Test.Utils where
 
 import Hedgehog (PropertyT, annotate, annotateShow, failure)
 import Test.HUnit (assertFailure)
+import Test.Hspec (SpecWith)
+import Test.Hspec.Hedgehog (modifyMaxSuccess)
+
+runs :: Int -> SpecWith a -> SpecWith a
+runs = modifyMaxSuccess . const
 
 assertRight :: (Show e) => Either e v -> IO v
 assertRight = \case
