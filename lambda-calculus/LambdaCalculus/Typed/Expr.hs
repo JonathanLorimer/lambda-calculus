@@ -1,14 +1,15 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE NoFieldSelectors #-}
+
 module LambdaCalculus.Typed.Expr where
 
-import Data.Functor.Foldable
-import qualified Data.List as L
-import Control.Monad.Reader (runReader, local, asks)
-import Data.Foldable (find)
+import Control.Monad.Reader (asks, local, runReader)
 import Data.Bifunctor (bimap)
+import Data.Foldable (find)
+import Data.Functor.Foldable
+import Data.List qualified as L
 import Data.Map.Strict (Map)
-import qualified Data.Map.Strict as M
+import Data.Map.Strict qualified as M
 
 -- Terms
 
@@ -70,7 +71,6 @@ printType = cata \case
   TyVarF a -> show a
   ArrowF t1 t2 -> "(" <> t1 <> " -> " <> t2 <> ")"
 
-
 -- Pre-typed λ-terms
 data PreTypedF a b f
   = PTVarF a
@@ -109,7 +109,7 @@ data Declaration a b = Declaration
   }
   deriving (Eq, Ord, Show)
 
-newtype Context a b = Context { ctx :: [Declaration a b] }
+newtype Context a b = Context {ctx :: [Declaration a b]}
   deriving (Eq, Ord, Show)
 
 emptyCtx :: Context a b
@@ -118,119 +118,136 @@ emptyCtx = Context []
 ext :: Declaration a b -> Context a b -> Context a b
 ext decl context = Context $ decl : context.ctx
 
-data Judgement a b =
-  Judgement
-    { context :: Context a b
-    , statement :: Statement a b
-    }
+data Judgement a b = Judgement
+  { context :: Context a b
+  , statement :: Statement a b
+  }
 
 wellTyped :: (Eq a, Eq b, Show a, Show b) => Context a b -> PreTyped a b -> Ty b
-wellTyped initalCtx = flip runReader initalCtx . cataA \case
-  PTVarF tmVar -> asks \context ->
-    case find (\d -> d.subject == tmVar) context.ctx of
-      Nothing -> error $ "Couldn't find " <> show tmVar <> " in context: " <> show context.ctx
-      Just decl -> decl.ty
-  PTAppF appTy1' appTy2' -> do
-    appTy1 <- appTy1'
-    appTy2 <- appTy2'
-    case appTy1 of
-      TyVar a -> error $ "Expected function type but got type var " <> show a
-      Arrow aty bty | aty == appTy2 -> pure bty
-      Arrow aty _ -> error $ "Input type to arrow " <> show aty <> " does not match type of the expression it was applied to " <> show appTy2
-  PTAbsF tmVar tp bodyTy' -> do
-    bodyTy <- local (ext $ Declaration tmVar tp) bodyTy'
-    pure $ Arrow tp bodyTy
+wellTyped initalCtx =
+  flip runReader initalCtx . cataA \case
+    PTVarF tmVar -> asks \context ->
+      case find (\d -> d.subject == tmVar) context.ctx of
+        Nothing ->
+          error $ "Couldn't find " <> show tmVar <> " in context: " <> show context.ctx
+        Just decl -> decl.ty
+    PTAppF appTy1' appTy2' -> do
+      appTy1 <- appTy1'
+      appTy2 <- appTy2'
+      case appTy1 of
+        TyVar a -> error $ "Expected function type but got type var " <> show a
+        Arrow aty bty | aty == appTy2 -> pure bty
+        Arrow aty _ ->
+          error $
+            "Input type to arrow "
+              <> show aty
+              <> " does not match type of the expression it was applied to "
+              <> show appTy2
+    PTAbsF tmVar tp bodyTy' -> do
+      bodyTy <- local (ext $ Declaration tmVar tp) bodyTy'
+      pure $ Arrow tp bodyTy
 
 closedWellTyped :: (Eq a, Eq b, Show a, Show b) => PreTyped a b -> Ty b
 closedWellTyped = wellTyped emptyCtx
 
 example1 :: PreTyped Char Char
-example1 = PTAbs 'y' (Arrow (TyVar 'a') (TyVar 'b'))
-  $ PTAbs 'z' (TyVar 'a')
-    $ PTApp (PTVar 'y') (PTVar 'z')
+example1 =
+  PTAbs 'y' (Arrow (TyVar 'a') (TyVar 'b')) $
+    PTAbs 'z' (TyVar 'a') $
+      PTApp (PTVar 'y') (PTVar 'z')
 
 wellTypedExample :: String
 wellTypedExample = printType . closedWellTyped $ example1
 
-typeCheck :: (Eq a, Eq b, Show a, Show b) => Context a b -> PreTyped a b -> Ty b -> Bool
+typeCheck ::
+  (Eq a, Eq b, Show a, Show b) => Context a b -> PreTyped a b -> Ty b -> Bool
 typeCheck initialCtx term expectedTy = (==) expectedTy $ wellTyped initialCtx term
 
 -- x : α → α, y : (α → α) → β ⊢ (λz : β . λu : γ . z)(y x) : γ → β .
 typeCheckExample :: Bool
-typeCheckExample = let
-    ctx = Context
-      [ Declaration 'x' (Arrow (TyVar 'a') (TyVar 'a'))
-      , Declaration 'y' (Arrow (Arrow (TyVar 'a') (TyVar 'a')) (TyVar 'b'))
-      ]
-    term = PTApp
-      (PTAbs 'z' (TyVar 'b') $ PTAbs 'u' (TyVar 'y') $ PTVar 'z')
-      (PTApp (PTVar 'y') (PTVar 'x'))
+typeCheckExample =
+  let
+    ctx =
+      Context
+        [ Declaration 'x' (Arrow (TyVar 'a') (TyVar 'a'))
+        , Declaration 'y' (Arrow (Arrow (TyVar 'a') (TyVar 'a')) (TyVar 'b'))
+        ]
+    term =
+      PTApp
+        (PTAbs 'z' (TyVar 'b') $ PTAbs 'u' (TyVar 'y') $ PTVar 'z')
+        (PTApp (PTVar 'y') (PTVar 'x'))
     ty = Arrow (TyVar 'y') (TyVar 'b')
-  in typeCheck ctx term ty
+   in
+    typeCheck ctx term ty
 
 domain :: Context a b -> [a]
 domain (Context ctx) = fmap (\decl -> decl.subject) ctx
 
 exampleContext0 :: Context String String
-exampleContext0 = Context
-  [ Declaration "y" (TyVar "sigma")
-  , Declaration "x1" (TyVar "rho1")
-  , Declaration "x2" (TyVar "rho2")
-  , Declaration "z" (TyVar "tau")
-  , Declaration "x3" (TyVar "rho3")
-  ]
+exampleContext0 =
+  Context
+    [ Declaration "y" (TyVar "sigma")
+    , Declaration "x1" (TyVar "rho1")
+    , Declaration "x2" (TyVar "rho2")
+    , Declaration "z" (TyVar "tau")
+    , Declaration "x3" (TyVar "rho3")
+    ]
 
 domEx1 :: [a]
 domEx1 = domain emptyCtx
 
 -- $> import LambdaCalculus.Typed.Expr
--- 
+
 -- $> domEx1 == []
--- 
+
 -- $> domain exampleContext0 == ["y", "x1", "x2", "z", "x3"]
 
 subcontext :: forall a b. (Eq a, Eq b) => Context a b -> Context a b -> Bool
 subcontext (Context ctx') (Context ctx) = null $ go ctx' ctx
-  where
-    go :: [Declaration a b] -> [Declaration a b] -> [Declaration a b]
-    go xs [] = xs
-    go [] xs = []
-    go (x:xs) (y:ys) = go (if x == y then xs else x:xs) ys
+ where
+  go :: [Declaration a b] -> [Declaration a b] -> [Declaration a b]
+  go xs [] = xs
+  go [] xs = []
+  go (x : xs) (y : ys) = go (if x == y then xs else x : xs) ys
 
 exampleContext1 :: Context String String
-exampleContext1 = Context
-  [ Declaration "x1" (TyVar "rho1")
-  , Declaration "z" (TyVar "tau")
-  ]
+exampleContext1 =
+  Context
+    [ Declaration "x1" (TyVar "rho1")
+    , Declaration "z" (TyVar "tau")
+    ]
 
 -- $> emptyCtx `subcontext` exampleContext1
--- 
+
 -- $> exampleContext1 `subcontext` exampleContext0
 
 permutation :: forall a b. (Ord a, Ord b) => Context a b -> Context a b -> Bool
 permutation ctx1 ctx2 = uncurry (==) $ bimap toCountMap toCountMap (ctx1, ctx2)
 
 toCountMap :: (Ord a, Ord b) => Context a b -> Map (Declaration a b) Word
-toCountMap = foldr (M.alter \case Just n -> Just $ n + 1; Nothing -> Just 1) M.empty . (.ctx)
+toCountMap =
+  foldr (M.alter \case Just n -> Just $ n + 1; Nothing -> Just 1) M.empty . (.ctx)
 
 exampleContext2 :: Context String String
-exampleContext2 = Context
-  [ Declaration "x2" (TyVar "rho2")
-  , Declaration "x1" (TyVar "rho1")
-  , Declaration "z" (TyVar "tau")
-  , Declaration "x3" (TyVar "rho3")
-  , Declaration "y" (TyVar "sigma")
-  ]
- 
+exampleContext2 =
+  Context
+    [ Declaration "x2" (TyVar "rho2")
+    , Declaration "x1" (TyVar "rho1")
+    , Declaration "z" (TyVar "tau")
+    , Declaration "x3" (TyVar "rho3")
+    , Declaration "y" (TyVar "sigma")
+    ]
+
 -- $> exampleContext2 `permutation` exampleContext0
 
-projection :: Eq a => [Declaration a b] -> [a] -> [Declaration a b]
+projection :: (Eq a) => [Declaration a b] -> [a] -> [Declaration a b]
 projection gamma phi = filter (\decl -> decl.subject `elem` phi) gamma
 
 expectedContext :: Context String String
-expectedContext = Context
-  [ Declaration "x1" (TyVar "rho1") 
-  , Declaration "z" (TyVar "tau")
-  ]
+expectedContext =
+  Context
+    [ Declaration "x1" (TyVar "rho1")
+    , Declaration "z" (TyVar "tau")
+    ]
 
 -- $> exampleContext0.ctx `projection` ["z", "u", "x1"] == expectedContext.ctx

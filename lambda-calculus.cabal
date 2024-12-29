@@ -32,7 +32,6 @@ common common-opts
   build-depends:
     , base
     , containers
-    , dlist
     , mtl
     , recursion-schemes
     , text
@@ -44,7 +43,7 @@ common common-opts
 library
   import:          common-opts
 
-  -- cabal-fmt: expand src
+  -- cabal-fmt: expand lambda-calculus
   exposed-modules:
     LambdaCalculus.Lib.Validation
     LambdaCalculus.Typed.BiDiExpr
@@ -56,13 +55,47 @@ library
     LambdaCalculus.Untyped.Subterms
     LambdaCalculus.Untyped.Vars
 
-  hs-source-dirs:  src
+  build-depends:
+    , dlist
+    , lambda-calculus:nameless-shifted
 
-executable lambda-calculus
+  hs-source-dirs:  lambda-calculus
+
+library nameless-shifted
+  import:          common-opts
+
+  -- cabal-fmt: expand nameless-shifted
+  exposed-modules:
+    Example.Expr
+    Shifted.Primitive
+
+  hs-source-dirs:  nameless-shifted
+
+test-suite nameless-shifted-tests
   import:         common-opts
+  type:           exitcode-stdio-1.0
+  hs-source-dirs: nameless-shifted-test
+  ghc-options:
+    -Wall -threaded -rtsopts -with-rtsopts=-N -fdefer-typed-holes -O0
+
   main-is:        Main.hs
-  hs-source-dirs: app
-  build-depends:  lambda-calculus
+
+  -- cabal-fmt: expand nameless-shifted-test -Main
+  other-modules:
+    Shifted.PrimitiveSpec
+    Spec
+    Test.Utils
+
+  build-depends:
+    , hedgehog
+    , hspec
+    , hspec-api
+    , hspec-core
+    , hspec-discover
+    , hspec-expectations
+    , hspec-hedgehog
+    , HUnit
+    , lambda-calculus:nameless-shifted
 
 test-suite lambda-calculus-tests
   import:         common-opts
