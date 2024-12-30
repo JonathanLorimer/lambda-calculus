@@ -71,6 +71,7 @@ library nameless-shifted
     Example.Expr
     Shifted.Binder
     Shifted.Nameless
+    Shifted.Operation.Index
     Shifted.Operation.Level
     Shifted.Var
 
@@ -89,6 +90,7 @@ test-suite nameless-shifted-tests
   other-modules:
     Shifted.Generators
     Shifted.NamelessSpec
+    Shifted.Operation.IndexSpec
     Shifted.Operation.LevelSpec
     Spec
     Test.Utils

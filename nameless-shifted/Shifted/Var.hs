@@ -4,6 +4,7 @@ module Shifted.Var (
   Var(..),
   Vars(..),
   Direction(..),
+  Indexed(..),
 ) where
 
 import Data.Kind
@@ -20,3 +21,6 @@ class Vars (expr :: Type -> Type) where
   -- | an abstract representation of an AST traversal running the
   -- provided function over each variable that we come across
   sub :: (Var d name -> expr (Var d name)) -> expr (Var d name) -> expr (Var d name)
+
+class Indexed (expr :: Type -> Type) where
+  maxIdx :: expr (Var Index name) -> Maybe Word

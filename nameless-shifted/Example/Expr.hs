@@ -4,7 +4,7 @@
 module Example.Expr where
 
 import Control.Monad.Reader (ask, asks, local, runReader)
-import Control.Monad.State.Strict (evalState)
+import Control.Monad.State.Strict (evalState, gets)
 import Data.Bifunctor (Bifunctor (..))
 import Data.Foldable
 import Data.Functor.Foldable hiding (fold)
@@ -15,6 +15,7 @@ import qualified Data.Set as S
 import Shifted.Var
 import Shifted.Nameless
 import Shifted.Binder
+import Data.Semigroup (Max(..))
 
 data ExprF b a expr
   = VarF a
@@ -91,6 +92,39 @@ instance LocallyNameless Level Expr where
             Nothing -> MS.insert 0 name m
             Just (w, _) -> MS.insert (w + 1) name m
       AppF expr1 expr2 -> liftA2 App expr1 expr2
+
+instance LocallyNameless Index Expr where
+  toNameless =
+    flip runReader MS.empty . cataA \case
+      VarF a -> asks $ Var . maybe (Free a 0) DeBruijn . MS.lookup a
+      AbsF name expr -> 
+        fmap (Abs name) . local (MS.alter (const $ Just 0) name . fmap (+ 1)) $ expr
+      AppF expr1 expr2 -> liftA2 App expr1 expr2
+
+  fromNameless =
+    flip runReader MS.empty . cataA \case
+      VarF a -> case a of
+        -- This represents a free variable, so we just use its name
+        Free a _ -> pure $ Var a
+        -- This is a de-bruijn level so we need to look it up
+        DeBruijn w -> asks \m -> case w `MS.lookup` m of
+          Just a -> Var a
+          Nothing ->
+            error $
+              fold
+                [ "Found binder "
+                , show w
+                , " but it wasn't present in the environment."
+                ]
+      AbsF name expr ->
+        fmap (Abs name) . local (MS.alter (const $ Just name) 0 . MS.mapKeysMonotonic (+ 1)) $ expr
+      AppF expr1 expr2 -> liftA2 App expr1 expr2
+
+instance Indexed (Expr b) where
+  maxIdx = cata \case
+    VarF a -> Nothing
+    AbsF _ expr -> Just $ maybe 0 (+ 1) expr
+    AppF expr1 expr2 -> fmap getMax $ (Max <$> expr1) <> (Max <$> expr2)
 
 fv :: (Eq a, Ord a) => Expr a a -> Set a
 fv = cata \case

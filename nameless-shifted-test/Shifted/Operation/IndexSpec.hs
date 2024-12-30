@@ -1,4 +1,4 @@
-module Shifted.Operation.LevelSpec where
+module Shifted.Operation.IndexSpec where
 
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -6,11 +6,11 @@ import Example.Expr (Expr (..), fv)
 import Hedgehog (MonadGen, annotateShow, forAll, (===))
 import Hedgehog.Gen qualified as Gen
 import Hedgehog.Range qualified as Range
-import Shifted.Operation.Level (
+import Shifted.Operation.Index (
   bind,
   close,
   open,
-  weaken, rename, substitute,
+  weaken, rename, substitute, close',
  )
 import Test.Hspec
 import Test.Hspec.Hedgehog (
@@ -26,46 +26,46 @@ import Test.Utils (runs)
 spec :: Spec
 spec = do
   describe "open" $ do
-    it "openₓ λ1.01 ===  λ1. x1" $ do
-      let expr :: Expr Text (Var Level Text)
-          expr = Abs "y" $ App (Var $ DeBruijn 0) (Var $ DeBruijn 1)
+    it "openₓ λ0.10 ===  λ0.x0" $ do
+      let expr :: Expr Text (Var Index Text)
+          expr = Abs "y" $ App (Var $ DeBruijn 1) (Var $ DeBruijn 0) 
       shouldBe (open "x" expr) $
         Abs "y" $
           App (Var $ Free "x" 0) (Var $ DeBruijn 0)
 
-    it "openₓ λ1.10 ===  λ1. 1x" $ do
-      let expr :: Expr Text (Var Level Text)
-          expr = Abs "y" $ App (Var $ DeBruijn 1) (Var $ DeBruijn 0)
+    it "openₓ λ0.01 ===  λ0.0x" $ do
+      let expr :: Expr Text (Var Index Text)
+          expr = Abs "y" $ App (Var $ DeBruijn 0) (Var $ DeBruijn 1)
       shouldBe (open "x" expr) $
         Abs "y" $
           App (Var $ DeBruijn 0) (Var $ Free "x" 0) 
 
   describe "close" $ do
-    it "closeₓ λ1.x1 === λ1.01" $ do
-      let expr :: Expr Text (Var Level Text)
+    it "closeₓ λ0.x0 === λ0.10" $ do
+      let expr :: Expr Text (Var Index Text)
           expr = Abs "y" $ App (Var $ Free "x" 0) (Var $ DeBruijn 0)
-      shouldBe (close "x" expr) $
-        Abs "y" $
-          App (Var $ DeBruijn 0) (Var $ DeBruijn 1)
-
-    it "closeₓ λ1.1x === λ1.10" $ do
-      let expr :: Expr Text (Var Level Text)
-          expr = Abs "y" $ App (Var $ DeBruijn 0) (Var $ Free "x" 0) 
       shouldBe (close "x" expr) $
         Abs "y" $
           App (Var $ DeBruijn 1) (Var $ DeBruijn 0)
 
-    it "closeₓ • closeₓ on (x₀ x₁) === λ0.λ1.10" $ do
-      let expr :: Expr Text (Var Level Text)
-          expr = App (Var $ Free "x" 0) (Var $ Free "x" 1)
-      shouldBe (close "x" $ close "x" expr) $
-        App (Var $ DeBruijn 1) (Var $ DeBruijn 0)
+    it "closeₓ λ0.0x === λ0.01" $ do
+      let expr :: Expr Text (Var Index Text)
+          expr = Abs "y" $ App (Var $ DeBruijn 0) (Var $ Free "x" 0) 
+      shouldBe (close "x" expr) $
+        Abs "y" $
+          App (Var $ DeBruijn 0) (Var $ DeBruijn 1)
 
-    it "closeₓ • closeₓ on (x₁ x₀) === λ0.λ1.01" $ do
-      let expr :: Expr Text (Var Level Text)
+    it "closeₓ • closeₓ on (x₀ x₁) === λ1.λ0.01" $ do
+      let expr :: Expr Text (Var Index Text)
+          expr = App (Var $ Free "x" 0) (Var $ Free "x" 1)
+      shouldBe (close' "x" $ close' "x" expr) $
+        Abs "x" $ Abs "x" $ App (Var $ DeBruijn 0) (Var $ DeBruijn 1)
+
+    it "closeₓ • closeₓ on (x₁ x₀) === λ1.λ0.10" $ do
+      let expr :: Expr Text (Var Index Text)
           expr = App (Var $ Free "x" 1) (Var $ Free "x" 0)
-      shouldBe (close "x" $ close "x" expr) $
-        App (Var $ DeBruijn 0) (Var $ DeBruijn 1)
+      shouldBe (close' "x" $ close' "x" expr) $
+        Abs "x" $ Abs "x" $ App (Var $ DeBruijn 1) (Var $ DeBruijn 0)
 
   describe "equations" $ do
     runs 100 $ it "close • open" $ hedgehog $ do
