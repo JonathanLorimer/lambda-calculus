@@ -1,11 +1,11 @@
 module Shifted.Generators where
 
-import Hedgehog (MonadGen)
 import Data.Text
+import Data.Text qualified as T
 import Example.Expr
-import qualified Data.Text as T
-import qualified Hedgehog.Gen as Gen
-import qualified Hedgehog.Range as Range
+import Hedgehog (MonadGen)
+import Hedgehog.Gen qualified as Gen
+import Hedgehog.Range qualified as Range
 
 textG :: (MonadGen m) => m Text
 textG = T.pack <$> Gen.string (Range.constant 1 1) Gen.alpha

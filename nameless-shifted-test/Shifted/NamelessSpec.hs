@@ -1,13 +1,13 @@
 module Shifted.NamelessSpec where
 
 import Hedgehog (annotateShow, forAll, (===))
-import Shifted.Var (Direction(..))
+import Shifted.Generators
+import Shifted.Nameless (LocallyNameless (..))
+import Shifted.Var (Direction (..))
 import Test.Hspec
 import Test.Hspec.Hedgehog (
   hedgehog,
  )
-import Shifted.Nameless (LocallyNameless(..))
-import Shifted.Generators
 import Test.Utils (runs)
 
 spec :: Spec

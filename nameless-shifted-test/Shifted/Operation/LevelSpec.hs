@@ -1,26 +1,28 @@
 module Shifted.Operation.LevelSpec where
 
+import Control.Applicative (liftA3)
+import Data.List.NonEmpty qualified as NE
+import Data.Set qualified as S
 import Data.Text (Text)
 import Data.Text qualified as T
 import Example.Expr (Expr (..), fv)
 import Hedgehog (MonadGen, annotateShow, forAll, (===))
 import Hedgehog.Gen qualified as Gen
 import Hedgehog.Range qualified as Range
+import Shifted.Nameless (LocallyNameless (..))
 import Shifted.Operation.Level (
   bind,
   close,
   open,
-  weaken, rename, substitute,
+  rename,
+  substitute,
+  weaken,
  )
+import Shifted.Var
 import Test.Hspec
 import Test.Hspec.Hedgehog (
   hedgehog,
  )
-import Control.Applicative (liftA3)
-import qualified Data.List.NonEmpty as NE
-import qualified Data.Set as S
-import Shifted.Var
-import Shifted.Nameless (LocallyNameless(..))
 import Test.Utils (runs)
 
 spec :: Spec
@@ -38,7 +40,7 @@ spec = do
           expr = Abs "y" $ App (Var $ DeBruijn 1) (Var $ DeBruijn 0)
       shouldBe (open "x" expr) $
         Abs "y" $
-          App (Var $ DeBruijn 0) (Var $ Free "x" 0) 
+          App (Var $ DeBruijn 0) (Var $ Free "x" 0)
 
   describe "close" $ do
     it "closeₓ λ1.x1 === λ1.01" $ do
@@ -50,7 +52,7 @@ spec = do
 
     it "closeₓ λ1.1x === λ1.10" $ do
       let expr :: Expr Text (Var Level Text)
-          expr = Abs "y" $ App (Var $ DeBruijn 0) (Var $ Free "x" 0) 
+          expr = Abs "y" $ App (Var $ DeBruijn 0) (Var $ Free "x" 0)
       shouldBe (close "x" expr) $
         Abs "y" $
           App (Var $ DeBruijn 1) (Var $ DeBruijn 0)
@@ -95,7 +97,7 @@ spec = do
       bind u (weaken name expr) === expr
 
     runs 100 $ it "⟨z/y⟩⟨y/x⟩ === ⟨z/x⟩" $ hedgehog $ do
-      (x, y, z, expr') <- forAll $ do 
+      (x, y, z, expr') <- forAll $ do
         expr <- exprG textG
         frees <- Gen.mapMaybe (NE.nonEmpty . S.toList . fv) (pure expr)
         y <- textG
@@ -106,7 +108,7 @@ spec = do
       rename z y (rename y x expr) === rename z x expr
 
     runs 100 $ it "[u/y]⟨y/x⟩ === [u/x]" $ hedgehog $ do
-      (x, y, u', expr') <- forAll $ do 
+      (x, y, u', expr') <- forAll $ do
         expr <- exprG textG
         frees <- Gen.mapMaybe (NE.nonEmpty . S.toList . fv) (pure expr)
         u <- exprG textG
@@ -117,7 +119,6 @@ spec = do
       annotateShow expr
       annotateShow u
       substitute u y (rename y x expr) === substitute u x expr
-
 
 textG :: (MonadGen m) => m Text
 textG = T.pack <$> Gen.string (Range.constant 1 1) Gen.alpha

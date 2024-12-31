@@ -1,5 +1,5 @@
-{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 
 module Example.Expr where
 
@@ -9,13 +9,13 @@ import Data.Bifunctor (Bifunctor (..))
 import Data.Foldable
 import Data.Functor.Foldable hiding (fold)
 import Data.Map.Strict qualified as MS
-import Data.Text (Text)
+import Data.Semigroup (Max (..))
 import Data.Set (Set)
-import qualified Data.Set as S
-import Shifted.Var
-import Shifted.Nameless
+import Data.Set qualified as S
+import Data.Text (Text)
 import Shifted.Binder
-import Data.Semigroup (Max(..))
+import Shifted.Nameless
+import Shifted.Var
 
 data ExprF b a expr
   = VarF a
@@ -87,7 +87,7 @@ instance LocallyNameless Level Expr where
                 , " but it wasn't present in the environment."
                 ]
       AbsF name expr ->
-        fmap (Abs name) . flip local expr $ \m -> 
+        fmap (Abs name) . flip local expr $ \m ->
           case MS.lookupMax m of
             Nothing -> MS.insert 0 name m
             Just (w, _) -> MS.insert (w + 1) name m
@@ -97,7 +97,7 @@ instance LocallyNameless Index Expr where
   toNameless =
     flip runReader MS.empty . cataA \case
       VarF a -> asks $ Var . maybe (Free a 0) DeBruijn . MS.lookup a
-      AbsF name expr -> 
+      AbsF name expr ->
         fmap (Abs name) . local (MS.alter (const $ Just 0) name . fmap (+ 1)) $ expr
       AppF expr1 expr2 -> liftA2 App expr1 expr2
 
@@ -117,7 +117,9 @@ instance LocallyNameless Index Expr where
                 , " but it wasn't present in the environment."
                 ]
       AbsF name expr ->
-        fmap (Abs name) . local (MS.alter (const $ Just name) 0 . MS.mapKeysMonotonic (+ 1)) $ expr
+        fmap (Abs name)
+          . local (MS.alter (const $ Just name) 0 . MS.mapKeysMonotonic (+ 1)) $
+          expr
       AppF expr1 expr2 -> liftA2 App expr1 expr2
 
 instance Indexed (Expr b) where

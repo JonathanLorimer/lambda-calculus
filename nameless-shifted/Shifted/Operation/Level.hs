@@ -1,10 +1,10 @@
 module Shifted.Operation.Level where
 
-import Shifted.Var
 import Shifted.Binder
+import Shifted.Var
 
 -- | Opens an expression under a lambda abstraction a.k.a move under a binder.
--- 
+--
 -- Note that because we keep the expression
 -- language abstract, this function is not meant to be applied to an actual lambda term, but
 -- instead is meant to be used when one has a lambda term in hand, this is reflected by the

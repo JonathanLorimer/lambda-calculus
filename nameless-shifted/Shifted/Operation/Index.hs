@@ -1,8 +1,8 @@
 module Shifted.Operation.Index where
 
-import Shifted.Var
-import Shifted.Binder
 import Data.Maybe (fromMaybe)
+import Shifted.Binder
+import Shifted.Var
 
 openIdx
   :: forall name expr
@@ -11,13 +11,15 @@ openIdx
   -> name
   -> expr (Var Index name)
   -> expr (Var Index name)
-openIdx idx x = sub $ var . \case
-  DeBruijn i 
-    | idx == i -> Free x 0
-    | otherwise -> DeBruijn i
-  Free y i
-    | y == x -> Free x (i + 1)
-    | otherwise -> Free y i
+openIdx idx x =
+  sub $
+    var . \case
+      DeBruijn i
+        | idx == i -> Free x 0
+        | otherwise -> DeBruijn i
+      Free y i
+        | y == x -> Free x (i + 1)
+        | otherwise -> Free y i
 
 open
   :: forall name expr
@@ -34,19 +36,21 @@ open'
   -> expr name (Var Index name)
 open' = unbind open
 
-closeIdx 
+closeIdx
   :: forall name expr
    . (Vars expr, Eq name)
   => Word
   -> name
   -> expr (Var Index name)
   -> expr (Var Index name)
-closeIdx idx x = sub $ var . \case
-  Free y i
-    | y == x && i == 0 -> DeBruijn idx
-    | y == x && i > 0 -> Free y (i - 1)
-    | otherwise -> Free y i
-  n -> n
+closeIdx idx x =
+  sub $
+    var . \case
+      Free y i
+        | y == x && i == 0 -> DeBruijn idx
+        | y == x && i > 0 -> Free y (i - 1)
+        | otherwise -> Free y i
+      n -> n
 
 close
   :: forall name expr
@@ -84,7 +88,7 @@ bindIdx
 bindIdx idx u =
   unbind (\_ x -> x) . sub \case
     DeBruijn i | idx == i -> u
-    y -> var y  
+    y -> var y
 
 bind
   :: forall name expr
@@ -110,11 +114,11 @@ parRename
   -> (name, name)
   -> expr (Var Index name)
   -> expr (Var Index name)
-parRename (y, w) (x, z) = 
-    open y 
-  . open w 
-  . close z 
-  . close x
+parRename (y, w) (x, z) =
+  open y
+    . open w
+    . close z
+    . close x
 
 substitute
   :: forall name expr
