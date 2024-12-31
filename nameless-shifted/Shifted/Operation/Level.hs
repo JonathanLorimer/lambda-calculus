@@ -1,34 +1,7 @@
-{-# LANGUAGE FunctionalDependencies #-}
+module Shifted.Operation.Level where
 
-module Shifted.Primitive where
-
-import Data.Kind
-
-data Var a = Name a Word | DeBruijn Word
-  deriving (Eq, Ord, Show)
-
-class Vars (expr :: Type -> Type) where
-  -- | an abstract representation of the variable constructor
-  var :: Var name -> expr (Var name)
-
-  -- | an abstract representation of an AST traversal running the
-  -- provided function over each variable that we come across
-  sub :: (Var name -> expr (Var name)) -> expr (Var name) -> expr (Var name)
-
-class Binder (expr :: Type -> Type -> Type) (binder :: Type) | binder -> expr where
-  -- an abstract representation of a binder constructor (usually lambda abstraction)
-  binder :: binder -> expr binder a -> expr binder a
-
-  -- A way to operate on a top level binder for the given expression, 
-  -- if the expression is not a binder this function should do nothing.
-  unbind
-    :: (binder -> expr binder a -> expr binder a)
-    -> expr binder a
-    -> expr binder a
-
-class LocallyNameless (expr :: Type -> Type -> Type) where
-  toNameless :: (Ord name) => expr name name -> expr name (Var name)
-  fromNameless :: expr name (Var name) -> expr name name
+import Shifted.Binder
+import Shifted.Var
 
 -- | Opens an expression under a lambda abstraction a.k.a move under a binder.
 --
@@ -40,22 +13,22 @@ open
   :: forall name expr
    . (Vars expr, Eq name)
   => name
-  -> expr (Var name)
-  -> expr (Var name)
+  -> expr (Var Level name)
+  -> expr (Var Level name)
 open x =
   sub $
     var . \case
-      DeBruijn 0 -> Name x 0
+      DeBruijn 0 -> Free x 0
       DeBruijn i -> DeBruijn (i - 1)
-      Name y i
-        | y == x -> Name x (i + 1)
-        | otherwise -> Name y i
+      Free y i
+        | y == x -> Free x (i + 1)
+        | otherwise -> Free y i
 
 open'
   :: forall name expr
    . (Binder expr name, Vars (expr name), Eq name)
-  => expr name (Var name)
-  -> expr name (Var name)
+  => expr name (Var Level name)
+  -> expr name (Var Level name)
 open' = unbind open
 
 -- | Closes an expression with a lambda abstraction a.k.a moves out of a binder.
@@ -68,23 +41,23 @@ close
   :: forall name expr
    . (Vars expr, Eq name)
   => name
-  -> expr (Var name)
-  -> expr (Var name)
+  -> expr (Var Level name)
+  -> expr (Var Level name)
 close x =
   sub $
     var . \case
-      Name y i
+      Free y i
         | y == x && i == 0 -> DeBruijn 0
-        | y == x && i > 0 -> Name y (i - 1)
-        | otherwise -> Name y i
+        | y == x && i > 0 -> Free y (i - 1)
+        | otherwise -> Free y i
       DeBruijn n -> DeBruijn (n + 1)
 
 close'
   :: forall name expr
    . (Binder expr name, Vars (expr name), Eq name)
   => name
-  -> expr name (Var name)
-  -> expr name (Var name)
+  -> expr name (Var Level name)
+  -> expr name (Var Level name)
 close' name = binder name . close name
 
 -- | Insert a binder. This is effectively adding a meaningless binder.
@@ -92,8 +65,8 @@ weaken
   :: forall name expr
    . (Binder expr name, Vars (expr name))
   => name
-  -> expr name (Var name)
-  -> expr name (Var name)
+  -> expr name (Var Level name)
+  -> expr name (Var Level name)
 weaken name =
   binder name
     . sub
@@ -106,9 +79,9 @@ weaken name =
 bind
   :: forall name expr
    . (Binder expr name, Vars (expr name))
-  => expr name (Var name)
-  -> expr name (Var name)
-  -> expr name (Var name)
+  => expr name (Var Level name)
+  -> expr name (Var Level name)
+  -> expr name (Var Level name)
 bind u =
   unbind (\_ x -> x) . sub \case
     DeBruijn 0 -> u
@@ -120,8 +93,8 @@ rename
    . (Vars expr, Eq name)
   => name
   -> name
-  -> expr (Var name)
-  -> expr (Var name)
+  -> expr (Var Level name)
+  -> expr (Var Level name)
 rename y x = open y . close x
 
 parRename
@@ -129,32 +102,32 @@ parRename
    . (Vars expr, Eq name)
   => (name, name)
   -> (name, name)
-  -> expr (Var name)
-  -> expr (Var name)
+  -> expr (Var Level name)
+  -> expr (Var Level name)
 parRename (y, w) (x, z) = open y . open w . close z . close x
 
 substitute
   :: forall name expr
    . (Binder expr name, Vars (expr name), Eq name)
-  => expr name (Var name)
+  => expr name (Var Level name)
   -> name
-  -> expr name (Var name)
-  -> expr name (Var name)
+  -> expr name (Var Level name)
+  -> expr name (Var Level name)
 substitute u x = bind u . close' x
 
 parSubstitute
   :: forall name expr
    . (Binder expr name, Vars (expr name), Eq name)
-  => (expr name (Var name), expr name (Var name))
+  => (expr name (Var Level name), expr name (Var Level name))
   -> (name, name)
-  -> expr name (Var name)
-  -> expr name (Var name)
+  -> expr name (Var Level name)
+  -> expr name (Var Level name)
 parSubstitute (u, v) (y, x) = bind u . bind v . close' y . close' x
 
 shift
   :: forall name expr
    . (Binder expr name, Vars (expr name), Eq name)
   => name
-  -> expr name (Var name)
-  -> expr name (Var name)
+  -> expr name (Var Level name)
+  -> expr name (Var Level name)
 shift x = open' . weaken x

@@ -17,12 +17,14 @@ build-type:    Simple
 common common-opts
   default-extensions:
     BlockArguments
+    DataKinds
     DeriveFoldable
     DeriveFunctor
     DerivingStrategies
     GeneralizedNewtypeDeriving
     ImportQualifiedPost
     LambdaCase
+    MultiParamTypeClasses
     OverloadedRecordDot
     OverloadedStrings
     ScopedTypeVariables
@@ -67,7 +69,11 @@ library nameless-shifted
   -- cabal-fmt: expand nameless-shifted
   exposed-modules:
     Example.Expr
-    Shifted.Primitive
+    Shifted.Binder
+    Shifted.Nameless
+    Shifted.Operation.Index
+    Shifted.Operation.Level
+    Shifted.Var
 
   hs-source-dirs:  nameless-shifted
 
@@ -82,7 +88,10 @@ test-suite nameless-shifted-tests
 
   -- cabal-fmt: expand nameless-shifted-test -Main
   other-modules:
-    Shifted.PrimitiveSpec
+    Shifted.Generators
+    Shifted.NamelessSpec
+    Shifted.Operation.IndexSpec
+    Shifted.Operation.LevelSpec
     Spec
     Test.Utils
 

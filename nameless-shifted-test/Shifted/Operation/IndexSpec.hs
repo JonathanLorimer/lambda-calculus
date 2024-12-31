@@ -1,80 +1,78 @@
-module Shifted.PrimitiveSpec where
+module Shifted.Operation.IndexSpec where
 
+import Control.Applicative (liftA3)
+import Data.List.NonEmpty qualified as NE
+import Data.Set qualified as S
 import Data.Text (Text)
 import Data.Text qualified as T
 import Example.Expr (Expr (..), fv)
 import Hedgehog (MonadGen, annotateShow, forAll, (===))
 import Hedgehog.Gen qualified as Gen
 import Hedgehog.Range qualified as Range
-import Shifted.Primitive (
-  LocallyNameless (..),
-  Var (..),
+import Shifted.Nameless (LocallyNameless (..))
+import Shifted.Operation.Index (
   bind,
   close,
+  close',
   open,
-  weaken, rename, substitute,
+  rename,
+  substitute,
+  weaken,
  )
+import Shifted.Var
 import Test.Hspec
 import Test.Hspec.Hedgehog (
   hedgehog,
-  modifyMaxSuccess,
  )
-import Control.Applicative (liftA3)
-import qualified Data.List.NonEmpty as NE
-import qualified Data.Set as S
-
-runs :: Int -> SpecWith a -> SpecWith a
-runs = modifyMaxSuccess . const
-
-simpleExample :: Expr Text Text
-simpleExample =
-  Abs "x" $
-    Abs "y" $
-      App (Var "x") (Var "y")
+import Test.Utils (runs)
 
 spec :: Spec
 spec = do
-  describe "nameless" $ do
-    runs 100 $ it "fromNameless • toNameless" $ hedgehog $ do
-      expr <- forAll $ exprG textG
-      let nameless = toNameless expr
-      annotateShow nameless
-      fromNameless nameless === expr
-
   describe "open" $ do
-    it "openₓ λ1.01 ===  λ1. x1" $ do
-      let expr :: Expr Text (Var Text)
-          expr = Abs "y" $ App (Var $ DeBruijn 0) (Var $ DeBruijn 1)
+    it "openₓ λ0.10 ===  λ0.x0" $ do
+      let expr :: Expr Text (Var Index Text)
+          expr = Abs "y" $ App (Var $ DeBruijn 1) (Var $ DeBruijn 0)
       shouldBe (open "x" expr) $
         Abs "y" $
-          App (Var $ Name "x" 0) (Var $ DeBruijn 0)
+          App (Var $ Free "x" 0) (Var $ DeBruijn 0)
 
-    it "openₓ λ1.01 ===  λ1. x1" $ do
-      let expr :: Expr Text (Var Text)
+    it "openₓ λ0.01 ===  λ0.0x" $ do
+      let expr :: Expr Text (Var Index Text)
           expr = Abs "y" $ App (Var $ DeBruijn 0) (Var $ DeBruijn 1)
       shouldBe (open "x" expr) $
         Abs "y" $
-          App (Var $ Name "x" 0) (Var $ DeBruijn 0)
+          App (Var $ DeBruijn 0) (Var $ Free "x" 0)
 
   describe "close" $ do
-    it "closeₓ λ1.x1 === λ1.01" $ do
-      let expr :: Expr Text (Var Text)
-          expr = Abs "y" $ App (Var $ Name "x" 0) (Var $ DeBruijn 0)
+    it "closeₓ λ0.x0 === λ0.10" $ do
+      let expr :: Expr Text (Var Index Text)
+          expr = Abs "y" $ App (Var $ Free "x" 0) (Var $ DeBruijn 0)
+      shouldBe (close "x" expr) $
+        Abs "y" $
+          App (Var $ DeBruijn 1) (Var $ DeBruijn 0)
+
+    it "closeₓ λ0.0x === λ0.01" $ do
+      let expr :: Expr Text (Var Index Text)
+          expr = Abs "y" $ App (Var $ DeBruijn 0) (Var $ Free "x" 0)
       shouldBe (close "x" expr) $
         Abs "y" $
           App (Var $ DeBruijn 0) (Var $ DeBruijn 1)
 
-    it "closeₓ • closeₓ on (x₀ x₁) === λ0.λ1.10" $ do
-      let expr :: Expr Text (Var Text)
-          expr = App (Var $ Name "x" 0) (Var $ Name "x" 1)
-      shouldBe (close "x" $ close "x" expr) $
-        App (Var $ DeBruijn 1) (Var $ DeBruijn 0)
+    it "closeₓ • closeₓ on (x₀ x₁) === λ1.λ0.01" $ do
+      let expr :: Expr Text (Var Index Text)
+          expr = App (Var $ Free "x" 0) (Var $ Free "x" 1)
+      shouldBe (close' "x" $ close' "x" expr) $
+        Abs "x" $
+          Abs "x" $
+            App (Var $ DeBruijn 0) (Var $ DeBruijn 1)
 
-    it "closeₓ • closeₓ on (x₁ x₀) === λ0.λ1.01" $ do
-      let expr :: Expr Text (Var Text)
-          expr = App (Var $ Name "x" 1) (Var $ Name "x" 0)
-      shouldBe (close "x" $ close "x" expr) $
-        App (Var $ DeBruijn 0) (Var $ DeBruijn 1)
+    it "closeₓ • closeₓ on (x₁ x₀) === λ1.λ0.10" $ do
+      let expr :: Expr Text (Var Index Text)
+          expr = App (Var $ Free "x" 1) (Var $ Free "x" 0)
+      shouldBe (close' "x" $ close' "x" expr) $
+        Abs "x" $
+          Abs "x" $
+            App (Var $ DeBruijn 1) (Var $ DeBruijn 0)
 
   describe "equations" $ do
     runs 100 $ it "close • open" $ hedgehog $ do
@@ -104,7 +102,7 @@ spec = do
       bind u (weaken name expr) === expr
 
     runs 100 $ it "⟨z/y⟩⟨y/x⟩ === ⟨z/x⟩" $ hedgehog $ do
-      (x, y, z, expr') <- forAll $ do 
+      (x, y, z, expr') <- forAll $ do
         expr <- exprG textG
         frees <- Gen.mapMaybe (NE.nonEmpty . S.toList . fv) (pure expr)
         y <- textG
@@ -115,7 +113,7 @@ spec = do
       rename z y (rename y x expr) === rename z x expr
 
     runs 100 $ it "[u/y]⟨y/x⟩ === [u/x]" $ hedgehog $ do
-      (x, y, u', expr') <- forAll $ do 
+      (x, y, u', expr') <- forAll $ do
         expr <- exprG textG
         frees <- Gen.mapMaybe (NE.nonEmpty . S.toList . fv) (pure expr)
         u <- exprG textG
@@ -126,7 +124,6 @@ spec = do
       annotateShow expr
       annotateShow u
       substitute u y (rename y x expr) === substitute u x expr
-
 
 textG :: (MonadGen m) => m Text
 textG = T.pack <$> Gen.string (Range.constant 1 1) Gen.alpha
