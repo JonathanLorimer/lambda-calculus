@@ -9,12 +9,12 @@ import Data.Bifunctor (Bifunctor (..))
 import Data.Foldable
 import Data.Functor.Foldable hiding (fold)
 import Data.Map.Strict qualified as MS
-import Data.Semigroup (Max (..))
+import Data.Semigroup (All (..), Max (..))
 import Data.Set (Set)
 import Data.Set qualified as S
 import Data.Text (Text)
-import Shifted.Binder
 import Shifted.Nameless
+import Shifted.Operation.Index qualified as OI
 import Shifted.Var
 
 data ExprF b a expr
@@ -47,16 +47,11 @@ instance Corecursive (Expr b a) where
 
 instance Vars (Expr b) where
   var = Var
-  sub f = cata \case
-    VarF a -> f a
-    AbsF b expr -> Abs b expr
-    AppF expr1 expr2 -> App expr1 expr2
-
-instance Binder Expr Text where
-  binder = Abs
-  unbind f = \case
-    Abs b expr -> f b expr
-    x -> x
+  sub f =
+    flip runReader 0 . cataA \case
+      VarF a -> asks $ f a
+      AbsF b expr -> Abs b <$> local (+ 1) expr
+      AppF expr1 expr2 -> liftA2 App expr1 expr2
 
 instance LocallyNameless Level Expr where
   toNameless =
@@ -82,7 +77,7 @@ instance LocallyNameless Level Expr where
           Nothing ->
             error $
               fold
-                [ "Found binder "
+                [ "Found bound variable "
                 , show w
                 , " but it wasn't present in the environment."
                 ]
@@ -112,14 +107,14 @@ instance LocallyNameless Index Expr where
           Nothing ->
             error $
               fold
-                [ "Found binder "
+                [ "Found bound variable "
                 , show w
                 , " but it wasn't present in the environment."
                 ]
       AbsF name expr ->
         fmap (Abs name)
-          . local (MS.alter (const $ Just name) 0 . MS.mapKeysMonotonic (+ 1)) $
-          expr
+          . local (MS.alter (const $ Just name) 0 . MS.mapKeysMonotonic (+ 1))
+          $ expr
       AppF expr1 expr2 -> liftA2 App expr1 expr2
 
 instance Indexed (Expr b) where

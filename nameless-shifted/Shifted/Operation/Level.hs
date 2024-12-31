@@ -1,6 +1,5 @@
 module Shifted.Operation.Level where
 
-import Shifted.Binder
 import Shifted.Var
 
 -- | Opens an expression under a lambda abstraction a.k.a move under a binder.
@@ -16,20 +15,13 @@ open
   -> expr (Var Level name)
   -> expr (Var Level name)
 open x =
-  sub $
-    var . \case
+  sub \v w -> var $
+    case v of
       DeBruijn 0 -> Free x 0
       DeBruijn i -> DeBruijn (i - 1)
       Free y i
         | y == x -> Free x (i + 1)
         | otherwise -> Free y i
-
-open'
-  :: forall name expr
-   . (Binder expr name, Vars (expr name), Eq name)
-  => expr name (Var Level name)
-  -> expr name (Var Level name)
-open' = unbind open
 
 -- | Closes an expression with a lambda abstraction a.k.a moves out of a binder.
 --
@@ -44,47 +36,49 @@ close
   -> expr (Var Level name)
   -> expr (Var Level name)
 close x =
-  sub $
-    var . \case
+  sub \v w -> var $
+    case v of
       Free y i
         | y == x && i == 0 -> DeBruijn 0
         | y == x && i > 0 -> Free y (i - 1)
         | otherwise -> Free y i
       DeBruijn n -> DeBruijn (n + 1)
 
-close'
-  :: forall name expr
-   . (Binder expr name, Vars (expr name), Eq name)
-  => name
-  -> expr name (Var Level name)
-  -> expr name (Var Level name)
-close' name = binder name . close name
-
 -- | Insert a binder. This is effectively adding a meaningless binder.
 weaken
   :: forall name expr
-   . (Binder expr name, Vars (expr name))
+   . (Vars (expr name))
   => name
   -> expr name (Var Level name)
   -> expr name (Var Level name)
-weaken name =
-  binder name
-    . sub
-      ( var . \case
-          DeBruijn i -> DeBruijn (i + 1)
-          x -> x
-      )
+weaken name = sub \v w -> var $
+  case v of
+    DeBruijn i -> DeBruijn (i + 1)
+    x -> x
 
 -- | Remove a binder. This is effectively applying a lambda to an expression and substituting it in.
 bind
   :: forall name expr
-   . (Binder expr name, Vars (expr name))
+   . (Vars (expr name))
   => expr name (Var Level name)
   -> expr name (Var Level name)
   -> expr name (Var Level name)
-bind u =
-  unbind (\_ x -> x) . sub \case
+bind u = sub \v w ->
+  case v of
     DeBruijn 0 -> u
+    DeBruijn i -> var $ DeBruijn (i - 1)
+    y -> var y
+
+bind'
+  :: forall name expr
+   . (Levelled (expr name), Vars (expr name))
+  => Word
+  -> expr name (Var Level name)
+  -> expr name (Var Level name)
+  -> expr name (Var Level name)
+bind' binders u = sub \v binders' ->
+  case v of
+    DeBruijn 0 -> mapBoundLevels (+ (binders + binders')) u
     DeBruijn i -> var $ DeBruijn (i - 1)
     y -> var y
 
@@ -108,26 +102,36 @@ parRename (y, w) (x, z) = open y . open w . close z . close x
 
 substitute
   :: forall name expr
-   . (Binder expr name, Vars (expr name), Eq name)
+   . (Vars (expr name), Eq name)
   => expr name (Var Level name)
   -> name
   -> expr name (Var Level name)
   -> expr name (Var Level name)
-substitute u x = bind u . close' x
+substitute u x = bind u . close x
+
+substitute'
+  :: forall name expr
+   . (Levelled (expr name), Vars (expr name), Eq name)
+  => Word
+  -> expr name (Var Level name)
+  -> name
+  -> expr name (Var Level name)
+  -> expr name (Var Level name)
+substitute' binders u x = bind' binders u . close x
 
 parSubstitute
   :: forall name expr
-   . (Binder expr name, Vars (expr name), Eq name)
+   . (Vars (expr name), Eq name)
   => (expr name (Var Level name), expr name (Var Level name))
   -> (name, name)
   -> expr name (Var Level name)
   -> expr name (Var Level name)
-parSubstitute (u, v) (y, x) = bind u . bind v . close' y . close' x
+parSubstitute (u, v) (y, x) = bind u . bind v . close y . close x
 
 shift
   :: forall name expr
-   . (Binder expr name, Vars (expr name), Eq name)
+   . (Vars (expr name), Eq name)
   => name
   -> expr name (Var Level name)
   -> expr name (Var Level name)
-shift x = open' . weaken x
+shift x = open x . weaken x

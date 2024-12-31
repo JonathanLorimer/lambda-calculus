@@ -5,7 +5,7 @@ import Data.DList qualified as DL
 import Data.Functor.Foldable
 import LambdaCalculus.Untyped.Expr
 
-sub :: Expr a -> DList (Expr a)
+sub :: Expr a b -> DList (Expr a b)
 sub = para \case
   VarF a -> DL.singleton $ Var a
   AppF (exprs1, subt1) (exprs2, subt2) ->

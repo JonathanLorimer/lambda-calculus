@@ -70,25 +70,25 @@ spec = do
         App (Var $ DeBruijn 0) (Var $ DeBruijn 1)
 
   describe "equations" $ do
-    runs 100 $ it "close • open" $ hedgehog $ do
+    runs 10000 $ it "close • open" $ hedgehog $ do
       (name, expr') <- forAll $ liftA2 (,) textG (exprG textG)
       let expr = toNameless expr'
       annotateShow expr
       close name (open name expr) === expr
 
-    runs 100 $ it "open • close" $ hedgehog $ do
+    runs 10000 $ it "open • close" $ hedgehog $ do
       (name, expr') <- forAll $ liftA2 (,) textG (exprG textG)
       let expr = toNameless expr'
       annotateShow expr
       open name (close name expr) === expr
 
-    runs 100 $ it "openₓ • openₓ • closeₓ • closeₓ on (x expr)" $ hedgehog $ do
+    runs 10000 $ it "openₓ • openₓ • closeₓ • closeₓ on (x expr)" $ hedgehog $ do
       (name, expr') <- forAll $ liftA2 (,) textG (exprG textG)
       let expr = toNameless $ App (Var name) expr'
       annotateShow expr
       close name (close name (open name (open name expr))) === expr
 
-    runs 100 $ it "bind • weaken" $ hedgehog $ do
+    runs 10000 $ it "bind • weaken" $ hedgehog $ do
       (name, u', expr') <- forAll $ liftA3 (,,) textG (exprG textG) (exprG textG)
       let expr = toNameless expr'
           u = toNameless u'
@@ -96,7 +96,7 @@ spec = do
       annotateShow u
       bind u (weaken name expr) === expr
 
-    runs 100 $ it "⟨z/y⟩⟨y/x⟩ === ⟨z/x⟩" $ hedgehog $ do
+    runs 1000 $ it "⟨z/y⟩⟨y/x⟩ === ⟨z/x⟩" $ hedgehog $ do
       (x, y, z, expr') <- forAll $ do
         expr <- exprG textG
         frees <- Gen.mapMaybe (NE.nonEmpty . S.toList . fv) (pure expr)
@@ -107,7 +107,7 @@ spec = do
       annotateShow expr
       rename z y (rename y x expr) === rename z x expr
 
-    runs 100 $ it "[u/y]⟨y/x⟩ === [u/x]" $ hedgehog $ do
+    runs 1000 $ it "[u/y]⟨y/x⟩ === [u/x]" $ hedgehog $ do
       (x, y, u', expr') <- forAll $ do
         expr <- exprG textG
         frees <- Gen.mapMaybe (NE.nonEmpty . S.toList . fv) (pure expr)
