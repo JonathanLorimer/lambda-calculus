@@ -18,6 +18,7 @@ import Debug.Trace qualified as Debug
 import Shifted.Nameless
 import Shifted.Operation.Level qualified as OL
 import Shifted.Var
+import Shifted.Operation.Index qualified as OI
 
 data ExprF b a f
   = VarF a
@@ -121,6 +122,17 @@ instance Indexed (Expr b) where
     AbsF _ expr -> Just $ maybe 0 (+ 1) expr
     AppF expr1 expr2 -> fmap getMax $ (Max <$> expr1) <> (Max <$> expr2)
 
+  mapFreeIndices f = 
+    flip runReader 0 . cata \case
+      VarF (DeBruijn n) -> asks \maxLevel ->
+        Var . DeBruijn $
+          if n > maxLevel
+            then f n
+            else n
+      VarF a -> pure $ Var a
+      AbsF name expr -> Abs name <$> local (+ 1) expr
+      AppF expr1 expr2 -> liftA2 App expr1 expr2
+
 instance Levelled (Expr b) where
   mapBoundLevels f =
     flip runReader 0 . cata \case
@@ -162,6 +174,19 @@ whnfLvl = \case
   -- NOTE: Below is the primary distinction between nf and whnfLvl
   expr -> expr
 
+whnfIdx :: Expr Text (Var Index Text) -> Expr Text (Var Index Text)
+whnfIdx = \case
+  -- NOTE: There is an optimization where we accumulate the list of
+  -- arguments create by successive `App`, this allows us to take
+  -- advantage of tail call optimization
+  App f u -> 
+    case whnfIdx f of
+      Abs name body -> 
+        whnfIdx . OI.substitute' 0 u name . OI.open name $ body
+      expr -> App expr u
+  -- NOTE: Below is the primary distinction between nf and whnfLvl
+  expr -> expr
+
 nfLvl :: Expr Text (Var Level Text) -> Expr Text (Var Level Text)
 nfLvl = \case
   -- NOTE: There is an optimization where we accumulate the list of
@@ -180,6 +205,27 @@ nfLvl = \case
       . OL.close name
       . nfLvl
       . OL.open name
+      $ body
+  Var a -> Var a
+
+nfIdx :: Expr Text (Var Index Text) -> Expr Text (Var Index Text)
+nfIdx = \case
+  -- NOTE: There is an optimization where we accumulate the list of
+  -- arguments create by successive `App`, this allows us to take
+  -- advantage of tail call optimization
+  App f u -> case nfIdx f of
+    Abs name body ->
+      nfIdx
+        . OI.substitute' 0 u name
+        . OI.open name
+        $ body
+    expr -> App expr u
+  -- NOTE: Below is the primary distinction between nfLvl and whnfLvl
+  Abs name body ->
+    Abs name
+      . OI.close name
+      . nfIdx
+      . OI.open name
       $ body
   Var a -> Var a
 

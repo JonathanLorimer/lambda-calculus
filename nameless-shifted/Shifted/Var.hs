@@ -30,7 +30,7 @@ class Indexed (expr :: Type -> Type) where
   maxIdx :: expr (Var Index name) -> Maybe Word
 
   mapFreeIndices
-    :: (Var Index name -> Var Index name)
+    :: (Word -> Word)
     -> expr (Var Index name)
     -> expr (Var Index name)
 

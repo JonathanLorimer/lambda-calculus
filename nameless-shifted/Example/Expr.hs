@@ -123,6 +123,17 @@ instance Indexed (Expr b) where
     AbsF _ expr -> Just $ maybe 0 (+ 1) expr
     AppF expr1 expr2 -> fmap getMax $ (Max <$> expr1) <> (Max <$> expr2)
 
+  mapFreeIndices f = 
+    flip runReader 0 . cata \case
+      VarF (DeBruijn n) -> asks \maxLevel ->
+        Var . DeBruijn $
+          if n > maxLevel
+            then f n
+            else n
+      VarF a -> pure $ Var a
+      AbsF name expr -> Abs name <$> local (+ 1) expr
+      AppF expr1 expr2 -> liftA2 App expr1 expr2
+
 fv :: (Eq a, Ord a) => Expr a a -> Set a
 fv = cata \case
   VarF a -> S.singleton a

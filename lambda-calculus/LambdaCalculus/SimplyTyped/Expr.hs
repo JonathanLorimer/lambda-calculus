@@ -21,6 +21,7 @@ import Shifted.Nameless
 import Shifted.Operation.Level qualified as OL
 import Shifted.Var
 import Text.Show.Unicode (ushow)
+import qualified Shifted.Operation.Index as OI
 
 -- Types
 data TyF a f
@@ -104,6 +105,29 @@ instance Indexed (PreTyped ty name) where
     PTAbsF _ _ expr -> Just $ maybe 0 (+ 1) expr
     PTAppF expr1 expr2 -> fmap getMax $ (Max <$> expr1) <> (Max <$> expr2)
 
+  mapFreeIndices f = 
+    flip runReader 0 . cata \case
+      PTVarF (DeBruijn n) -> asks \maxLevel ->
+        PTVar . DeBruijn $
+          if n > maxLevel
+            then f n
+            else n
+      PTVarF a -> pure $ PTVar a
+      PTAbsF name ty expr -> PTAbs name ty <$> local (+ 1) expr
+      PTAppF expr1 expr2 -> liftA2 PTApp expr1 expr2
+
+instance Levelled (PreTyped ty b) where
+  mapBoundLevels f =
+    flip runReader 0 . cata \case
+      PTVarF (DeBruijn n) -> asks \maxLevel ->
+        PTVar . DeBruijn $
+          if n > maxLevel
+            then n
+            else f n
+      PTVarF a -> pure $ PTVar a
+      PTAbsF name ty expr -> PTAbs name ty <$> local (+ 1) expr
+      PTAppF expr1 expr2 -> liftA2 PTApp expr1 expr2
+
 -- Locally nameless instances
 instance LocallyNameless Level (PreTyped ty) where
   toNameless =
@@ -170,18 +194,6 @@ instance LocallyNameless Index (PreTyped ty) where
           $ expr
       PTAppF expr1 expr2 -> liftA2 PTApp expr1 expr2
 
-instance Levelled (PreTyped ty b) where
-  mapBoundLevels f =
-    flip runReader 0 . cata \case
-      PTVarF (DeBruijn n) -> asks \maxLevel ->
-        PTVar . DeBruijn $
-          if n > maxLevel
-            then n
-            else f n
-      PTVarF a -> pure $ PTVar a
-      PTAbsF name ty expr -> PTAbs name ty <$> local (+ 1) expr
-      PTAppF expr1 expr2 -> liftA2 PTApp expr1 expr2
-
 fvNL :: (Ord a) => PreTyped ty b (Var d a) -> Set a
 fvNL = cata \case
   PTVarF (Free a _) -> S.singleton a
@@ -214,6 +226,20 @@ whnfLvl = \case
   -- NOTE: Below is the primary distinction between nf and whnf
   expr -> expr
 
+whnfIdx :: PreTyped ty Text (Var Index Text) -> PreTyped ty Text (Var Index Text)
+whnfIdx = \case
+  -- NOTE: There is an optimization where we accumulate the list of
+  -- arguments create by successive `App`, this allows us to take
+  -- advantage of tail call optimization
+  PTApp f u -> 
+    case whnfIdx f of
+      PTAbs name ty body -> 
+        whnfIdx . OI.substitute' 0 u name . OI.open name $ body
+      expr -> PTApp expr u
+  -- NOTE: Below is the primary distinction between nf and whnfLvl
+  expr -> expr
+
+
 nfLvl :: PreTyped ty Text (Var Level Text) -> PreTyped ty Text (Var Level Text)
 nfLvl = \case
   -- NOTE: There is an optimization where we accumulate the list of
@@ -224,6 +250,27 @@ nfLvl = \case
     expr -> PTApp expr u
   -- NOTE: Below is the primary distinction between nf and whnf
   PTAbs name ty body -> PTAbs name ty . OL.close name . nfLvl . OL.open name $ body
+  PTVar a -> PTVar a
+
+nfIdx :: PreTyped ty Text (Var Index Text) -> PreTyped ty Text (Var Index Text)
+nfIdx = \case
+  -- NOTE: There is an optimization where we accumulate the list of
+  -- arguments create by successive `App`, this allows us to take
+  -- advantage of tail call optimization
+  PTApp f u -> case nfIdx f of
+    PTAbs name ty body ->
+      nfIdx
+        . OI.substitute' 0 u name
+        . OI.open name
+        $ body
+    expr -> PTApp expr u
+  -- NOTE: Below is the primary distinction between nfLvl and whnfLvl
+  PTAbs name ty body ->
+    PTAbs name ty
+      . OI.close name
+      . nfIdx
+      . OI.open name
+      $ body
   PTVar a -> PTVar a
 
 step :: PreTyped ty Text (Var Level Text) -> PreTyped ty Text (Var Level Text)
