@@ -1,6 +1,5 @@
 module Shifted.Operation.IndexSpec where
 
-import Control.Applicative (liftA3)
 import Data.List.NonEmpty qualified as NE
 import Data.Set qualified as S
 import Data.Text (Text)
@@ -11,13 +10,10 @@ import Hedgehog.Gen qualified as Gen
 import Hedgehog.Range qualified as Range
 import Shifted.Nameless (LocallyNameless (..))
 import Shifted.Operation.Index (
-  bind,
   close,
-  close',
   open,
   rename,
   substitute,
-  weaken,
  )
 import Shifted.Var
 import Test.Hspec
@@ -61,18 +57,16 @@ spec = do
     it "closeₓ • closeₓ on (x₀ x₁) === λ1.λ0.01" $ do
       let expr :: Expr Text (Var Index Text)
           expr = App (Var $ Free "x" 0) (Var $ Free "x" 1)
-      shouldBe (close' "x" $ close' "x" expr) $
-        Abs "x" $
-          Abs "x" $
-            App (Var $ DeBruijn 0) (Var $ DeBruijn 1)
+      shouldBe
+        (close "x" . Abs "x" . close "x" $ expr)
+        $ Abs "x" (App (Var $ DeBruijn 0) (Var $ DeBruijn 1))
 
     it "closeₓ • closeₓ on (x₁ x₀) === λ1.λ0.10" $ do
       let expr :: Expr Text (Var Index Text)
           expr = App (Var $ Free "x" 1) (Var $ Free "x" 0)
-      shouldBe (close' "x" $ close' "x" expr) $
-        Abs "x" $
-          Abs "x" $
-            App (Var $ DeBruijn 1) (Var $ DeBruijn 0)
+      shouldBe
+        (close "x" . Abs "x" . close "x" $ expr)
+        $ Abs "x" (App (Var $ DeBruijn 1) (Var $ DeBruijn 0))
 
   describe "equations" $ do
     runs 100 $ it "close • open" $ hedgehog $ do
@@ -92,14 +86,6 @@ spec = do
       let expr = toNameless $ App (Var name) expr'
       annotateShow expr
       close name (close name (open name (open name expr))) === expr
-
-    runs 100 $ it "bind • weaken" $ hedgehog $ do
-      (name, u', expr') <- forAll $ liftA3 (,,) textG (exprG textG) (exprG textG)
-      let expr = toNameless expr'
-          u = toNameless u'
-      annotateShow expr
-      annotateShow u
-      bind u (weaken name expr) === expr
 
     runs 100 $ it "⟨z/y⟩⟨y/x⟩ === ⟨z/x⟩" $ hedgehog $ do
       (x, y, z, expr') <- forAll $ do
